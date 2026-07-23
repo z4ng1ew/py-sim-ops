@@ -1,0 +1,3329 @@
+=== ДЕРЕВО ПРОЕКТА ===
+.
+├── cheet-sheet.md
+├── dump_project.sh
+├── files
+│   ├── README.md
+│   ├── REPORT.md
+│   ├── robozon-track2
+│   │   ├── app.py
+│   │   ├── cad
+│   │   │   ├── asr100_400.step
+│   │   │   ├── blender_anim.py
+│   │   │   └── generate_layout.py
+│   │   ├── docker-compose.yml
+│   │   ├── Dockerfile
+│   │   ├── docs
+│   │   │   ├── alternatives.md
+│   │   │   ├── capex_opex.md
+│   │   │   ├── make_schemes.py
+│   │   │   └── schemes
+│   │   │       ├── box_station.svg
+│   │   │       ├── control.svg
+│   │   │       ├── layout_tier.svg
+│   │   │       ├── robot.svg
+│   │   │       └── section.svg
+│   │   ├── Makefile
+│   │   ├── README.md
+│   │   ├── REPORT.md
+│   │   ├── requirements.txt
+│   │   ├── results
+│   │   │   ├── analytic.json
+│   │   │   ├── plots
+│   │   │   ├── S0_base
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S1_peak15
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S2_robots5
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S3_ports10
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S4_tier_down
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S5_induct6
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S6_skew
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── S7_stress120
+│   │   │   │   ├── latency_s.csv
+│   │   │   │   ├── summary.json
+│   │   │   │   └── timeseries.csv
+│   │   │   ├── summary_all.json
+│   │   │   ├── summary_all.md
+│   │   │   └── validation.md
+│   │   ├── sim
+│   │   │   ├── analytic.py
+│   │   │   ├── animate3d.py
+│   │   │   ├── animate.py
+│   │   │   ├── config.py
+│   │   │   ├── docs
+│   │   │   ├── engine.py
+│   │   │   ├── model.py
+│   │   │   ├── run_all.py
+│   │   │   ├── run.py
+│   │   │   └── wms_client.py
+│   │   ├── {sim,docs
+│   │   │   └── schemes,cad,results,slides,wms}
+│   │   ├── slides
+│   │   │   ├── PRESENTATION.md
+│   │   │   └── presentation.pptx
+│   │   └── wms
+│   │       ├── demo_integration.py
+│   │       └── mock_wms.py
+│   └── section.svg
+└── project_full_dump.txt
+
+22 directories, 65 files
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/Dockerfile
+================================================================
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY sim/ sim/
+COPY wms/ wms/
+COPY docs/ docs/
+COPY app.py .
+
+# полный прогон верификации при сборке НЕ выполняем — по запросу:
+#   docker compose run sim make verify
+CMD ["python", "sim/run.py", "S0_base"]
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/docker-compose.yml
+================================================================
+services:
+  sim:
+    build: .
+    volumes:
+      - ./results:/app/results
+    command: python sim/run_all.py
+
+  wms:
+    build: .
+    command: python wms/mock_wms.py --port 8008
+    ports:
+      - "8008:8008"
+
+  dashboard:
+    build: .
+    volumes:
+      - ./results:/app/results
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/Makefile
+================================================================
+.PHONY: run verify fast wms demo dashboard schemes clean
+
+run:            ## базовый сценарий (8 ч модельного времени, ~40 с)
+	python3 sim/run.py S0_base
+
+verify:         ## все 8 сценариев + валидация + графики (~3 мин)
+	python3 sim/run_all.py
+
+fast:           ## быстрая проверка всех сценариев (~1 мин)
+	python3 sim/run_all.py --fast
+
+wms:            ## поднять mock-WMS на :8008
+	python3 wms/mock_wms.py --port 8008
+
+demo:           ## сквозной тест сетевой интеграции с WMS
+	python3 wms/demo_integration.py
+
+dashboard:      ## интерактивный дашборд результатов (нужен streamlit)
+	streamlit run app.py
+
+schemes:        ## перегенерировать SVG-схемы
+	python3 docs/make_schemes.py
+
+clean:
+	rm -rf results/*/ results/plots __pycache__ sim/__pycache__
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/docs/make_schemes.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+make_schemes.py — генератор инженерных схем (SVG) для отчёта.
+
+Запуск:  python docs/make_schemes.py
+Выход:   docs/schemes/*.svg  (5 схем)
+"""
+
+import os
+
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schemes")
+os.makedirs(OUT, exist_ok=True)
+
+FONT = 'font-family="DejaVu Sans, Arial, sans-serif"'
+
+
+def save(name, w, h, body, title):
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+           f'viewBox="0 0 {w} {h}">\n'
+           f'<rect width="{w}" height="{h}" fill="#ffffff"/>\n'
+           f'<text x="{w/2}" y="26" text-anchor="middle" {FONT} '
+           f'font-size="17" font-weight="bold" fill="#111">{title}</text>\n'
+           f'{body}\n</svg>\n')
+    path = os.path.join(OUT, name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(svg)
+    print("ok", path)
+
+
+def txt(x, y, s, size=11, anchor="middle", color="#111", bold=False, rot=None):
+    w = ' font-weight="bold"' if bold else ""
+    r = f' transform="rotate({rot} {x} {y})"' if rot else ""
+    return (f'<text x="{x}" y="{y}" text-anchor="{anchor}" {FONT} '
+            f'font-size="{size}" fill="{color}"{w}{r}>{s}</text>\n')
+
+
+def rect(x, y, w, h, fill, stroke="#333", sw=1, rx=0, opacity=1):
+    return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{fill}" '
+            f'stroke="{stroke}" stroke-width="{sw}" rx="{rx}" '
+            f'opacity="{opacity}"/>\n')
+
+
+def line(x1, y1, x2, y2, stroke="#333", sw=1, dash=None):
+    d = f' stroke-dasharray="{dash}"' if dash else ""
+    return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
+            f'stroke="{stroke}" stroke-width="{sw}"{d}/>\n')
+
+
+def arrow(x1, y1, x2, y2, color="#c00", sw=1.6):
+    return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" '
+            f'stroke-width="{sw}" marker-end="url(#arr)"/>\n')
+
+
+DEFS = ('<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" '
+        'refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="context-stroke"/>'
+        '</marker></defs>\n')
+
+
+# =========================================================== 1. план яруса
+def scheme_layout():
+    W, H = 980, 700
+    b = DEFS
+    # масштаб: поле 60×46.2 м -> 780×600 px, старт (110, 60)
+    sx, sy, k = 110, 60, 13.0
+    fw, fh = 60.0 * k, 46.2 * k
+    b += rect(sx, sy, fw, fh, "#f7f7f7", "#222", 2)
+    # порты 21×20
+    mx = 3.0
+    for col in range(21):
+        for row in range(20):
+            x = sx + (mx + col * 2.4) * k - 5
+            y = sy + (mx + row * 1.8) * k - 4
+            if col < 20:
+                fill = "#8ecae6"          # основные 400
+            elif row < 16:
+                fill = "#ffb703"          # резервные 16
+            elif row < 18:
+                fill = "#e63946"          # реджект 2
+            else:
+                continue
+            b += rect(x, y, 10, 8, fill, "#456", 0.5)
+    # индукционные станции по периметру (по 5 на сторону)
+    for i in range(5):
+        t = (i + 0.5) / 5
+        for (x, y, w, h) in [(sx + t * fw - 14, sy - 16, 28, 12),
+                             (sx + t * fw - 14, sy + fh + 4, 28, 12),
+                             (sx - 16, sy + t * fh - 6, 12, 28),
+                             (sx + fw + 4, sy + t * fh - 6, 12, 28)]:
+            b += rect(x, y, w, h, "#90be6d", "#2d6a4f", 1.2, rx=2)
+    # зоны зарядки в углах
+    for (x, y) in [(sx + 6, sy + 6), (sx + fw - 66, sy + 6),
+                   (sx + 6, sy + fh - 26), (sx + fw - 66, sy + fh - 26)]:
+        b += rect(x, y, 60, 20, "#dcd6f7", "#5a4fcf", 1, rx=3)
+        b += txt(x + 30, y + 14, "зарядка", 10, color="#3a2fb0")
+    # подписи
+    b += txt(sx + fw / 2, sy + fh + 44, "60,0 м", 13, bold=True)
+    b += line(sx, sy + fh + 30, sx + fw, sy + fh + 30, "#111", 1)
+    b += txt(sx - 60, sy + fh / 2, "46,2 м", 13, bold=True, rot=-90)
+    b += line(sx - 44, sy, sx - 44, sy + fh, "#111", 1)
+    lx, ly = sx + fw + 40, sy + 30
+    for dy, (c, s) in enumerate([("#8ecae6", "порты направлений — 400 шт (20×20)"),
+                                 ("#ffb703", "резервные порты — 16 шт"),
+                                 ("#e63946", "порты «reject» (нечитаемые) — 2 шт"),
+                                 ("#90be6d", "индукция (DWS + посадка) — 20 шт"),
+                                 ("#dcd6f7", "зарядные доки — 24 шт")]):
+        b += rect(lx, ly + dy * 26, 14, 11, c, "#456", 0.8)
+        b += txt(lx + 22, ly + dy * 26 + 10, s, 11, anchor="start")
+    b += txt(lx, ly + 5 * 26 + 14, "Сетка QR-навигации: шаг 0,6 м", 11,
+             anchor="start", color="#555")
+    b += txt(lx, ly + 5 * 26 + 32, "Роботов на ярусе: 460", 11,
+             anchor="start", color="#555")
+    b += txt(lx, ly + 5 * 26 + 50, "Проездов между портами: 2,4×1,8 м", 11,
+             anchor="start", color="#555")
+    save("layout_tier.svg", W, H, b,
+         "Схема 1. План роботизированного яруса (одинаков для ярусов 1–3)")
+
+
+# =========================================================== 2. разрез
+def scheme_section():
+    W, H = 980, 640
+    b = DEFS
+    gx, gy = 90, 560                     # уровень пола
+    k = 36                               # px на метр по высоте
+    bw = 720                             # ширина корпуса на схеме
+    b += line(40, gy, 940, gy, "#111", 2.5)
+    b += txt(60, gy + 18, "отм. 0,0 — зона КТЯ", 11, anchor="start")
+    tiers = [(3.6, "#8ecae6"), (6.8, "#79b8d8"), (10.0, "#5fa8cc")]
+    for i, (z, c) in enumerate(tiers):
+        y = gy - z * k
+        b += rect(gx, y - 10, bw, 10, c, "#245", 1.2)
+        b += txt(gx - 10, y - 12, f"ярус {i+1} · отм. +{z:.1f}".replace(".", ","),
+                 11, anchor="end")
+        # роботы на ярусе
+        for rx in range(6):
+            b += rect(gx + 60 + rx * 110, y - 22, 26, 11, "#ffb703", "#845", 1)
+    # шахты (3 шт на разрезе)
+    for j, px in enumerate([gx + 150, gx + 360, gx + 570]):
+        for z, _ in tiers:
+            y = gy - z * k
+            b += line(px, y, px, gy - 34, "#e63946", 3)
+        b += rect(px - 16, gy - 34, 32, 22, "#f4a261", "#8a4f1d", 1.2)
+        b += txt(px, gy - 40, "КТЯ", 10)
+    b += txt(gx + 360, gy - 5.2 * k,
+             "гравитационные шахты со спиральными вставками-замедлителями",
+             11, color="#a31621")
+    # наклонная лента подъёма
+    b += line(60, gy, gx + 40, gy - 10.0 * k - 10, "#2d6a4f", 5)
+    b += txt(46, gy - 5 * k, "наклонные ленты подачи на ярусы (12 шт)", 11,
+             color="#2d6a4f", rot=-63)
+    # отводящая лента внизу
+    b += rect(gx + 40, gy - 12, 640, 8, "#adb5bd", "#495057", 1)
+    b += arrow(gx + 620, gy - 8, gx + 700, gy - 8, "#495057", 2)
+    b += txt(gx + 700, gy + 14, "отводящие ленты (20 шт) → отгрузка", 11,
+             anchor="end")
+    # габарит здания
+    b += line(gx + bw + 60, gy, gx + bw + 60, gy - 12.6 * k, "#111", 1)
+    b += txt(gx + bw + 74, gy - 6.3 * k, "12,6 м", 12, bold=True, rot=-90)
+    b += txt(490, 615, "Пятно застройки: 62×59,5 м ≈ 3 690 м² "
+             "(в 5,4 раза меньше лимита 20 000 м²)", 12, bold=True)
+    save("section.svg", W, H, b, "Схема 2. Поперечный разрез: 3 яруса, шахты, зона КТЯ")
+
+
+# =========================================================== 3. робот
+def scheme_robot():
+    W, H = 980, 560
+    b = DEFS
+    # вид сбоку (слева)
+    ox, oy = 130, 420
+    k = 0.55                             # px на мм
+    bw, bh = 720 * k, 250 * k
+    b += rect(ox, oy - bh, bw, bh, "#dee2e6", "#343a40", 2, rx=8)
+    for wx in (ox + 60 * k, ox + bw - 60 * k):
+        b += f'<circle cx="{wx}" cy="{oy}" r="{55*k}" fill="#495057" stroke="#212529" stroke-width="2"/>\n'
+    # тилт-трей наклонён
+    b += (f'<g transform="rotate(-18 {ox+bw/2} {oy-bh})">'
+          + rect(ox + 60 * k, oy - bh - 60 * k, 500 * k, 55 * k,
+                 "#ffb703", "#845", 2, rx=4) + '</g>\n')
+    b += rect(ox + 300 * k, oy - bh - 10, 120 * k, 10, "#845", "#845", 1)
+    b += txt(ox + bw / 2, oy - bh - 78, "лоток 500×430 мм, наклон ±45°, 0,9 с", 11)
+    b += txt(ox + bw / 2, oy + 42, "АМР-Т5: 720×540×330 мм · до 5 кг · 3,0 м/с",
+             12, bold=True)
+    b += txt(ox + bw / 2, oy + 62, "LiFePO4 307 Вт·ч · 85 Вт ход · зарядка 15 мин",
+             11, color="#555")
+    # габаритные линии
+    b += line(ox, oy + 14, ox + bw, oy + 14, "#111", 1)
+    b += txt(ox + bw / 2, oy + 27, "720 мм", 10)
+    b += line(ox - 14, oy, ox - 14, oy - bh, "#111", 1)
+    b += txt(ox - 26, oy - bh / 2, "330 мм", 10, rot=-90)
+    # компоненты (справа) — выноски
+    cx = 600
+    items = [
+        ("камера QR-навигации (низ) + IMU", 470),
+        ("контроллер + Wi-Fi 6 (802.11ax) 5 ГГц", 440),
+        ("датчики препятствий: 4× ToF + бампер", 410),
+        ("мотор-колёса 2×150 Вт, дифф. привод", 380),
+        ("контакты автозарядки (сзади)", 350),
+        ("тилт-механизм: сервопривод 60 Вт", 320),
+    ]
+    b += txt(cx + 160, 285, "Состав узлов", 13, bold=True)
+    for s, y in items:
+        b += f'<circle cx="{cx}" cy="{y}" r="3" fill="#c00"/>\n'
+        b += txt(cx + 12, y + 4, s, 11, anchor="start")
+    # цикл робота
+    b += txt(cx + 160, 130, "Рабочий цикл (среднее, модель)", 13, bold=True)
+    for i, s in enumerate(["посадка товара — 1,8 с",
+                           "гружёный ход — 46,6 м",
+                           "сброс в порт — 2,5 с (4,5 с хрупкие)",
+                           "порожний ход к ближайшей станции — 18,5 м",
+                           "итого цикл ≈ 42,5 с → 84,7 сорт/ч"]):
+        b += txt(cx, 152 + i * 20, "• " + s, 11, anchor="start")
+    save("robot.svg", W, H, b, "Схема 3. Сортировочный робот АМР-Т5 с наклонным лотком")
+
+
+# =========================================================== 4. КТЯ-станция
+def scheme_box_station():
+    W, H = 980, 560
+    b = DEFS
+    # шахта сверху
+    b += rect(430, 50, 60, 150, "#f4a261", "#8a4f1d", 2)
+    b += txt(460, 40, "шахта (сливает 3 яруса)", 11)
+    b += arrow(460, 205, 460, 250, "#c00", 2)
+    # активный короб
+    b += rect(400, 250, 120, 100, "#deb887", "#6b4f1d", 2)
+    b += txt(460, 305, "КТЯ", 13, bold=True)
+    b += txt(460, 322, "активный", 10)
+    # датчики
+    b += line(380, 250, 380, 350, "#5a4fcf", 2)
+    b += txt(368, 300, "лазерный датчик уровня", 10, rot=-90, color="#3a2fb0")
+    b += rect(398, 352, 124, 8, "#adb5bd", "#495057", 1)
+    b += txt(560, 360, "тензовесы (контроль веса)", 10, anchor="start")
+    # уплотнитель
+    b += rect(300, 240, 70, 26, "#c9ada7", "#6d4c41", 1.5, rx=4)
+    b += txt(335, 257, "вибро", 10)
+    b += txt(335, 232, "уплотнение 2 Гц", 10)
+    # резервный короб
+    b += rect(560, 260, 110, 90, "#e9ecef", "#868e96", 2)
+    b += txt(615, 300, "КТЯ", 12)
+    b += txt(615, 316, "резервный", 10)
+    b += arrow(556, 305, 526, 305, "#2d6a4f", 2)
+    b += txt(600, 250, "сдвиг 8 с (тандем)", 10, color="#2d6a4f")
+    # толкатель и лента
+    b += rect(310, 380, 80, 30, "#5a4fcf", "#3a2fb0", 1.5, rx=4)
+    b += txt(350, 400, "толкатель", 10, color="#fff")
+    b += arrow(394, 395, 434, 395, "#3a2fb0", 2)
+    b += rect(280, 430, 420, 24, "#adb5bd", "#495057", 1.5)
+    b += arrow(600, 442, 690, 442, "#212529", 2.5)
+    b += txt(490, 470, "отводящая лента (такт толкателя 4 с; 1 лента на 20 станций)", 11)
+    # подача пустых
+    b += rect(700, 380, 150, 40, "#90be6d", "#2d6a4f", 1.5, rx=4)
+    b += txt(775, 405, "формовщик коробов", 10)
+    b += arrow(700, 400, 676, 330, "#2d6a4f", 2)
+    b += txt(760, 360, "подача пустых КТЯ", 10, color="#2d6a4f")
+    # логика закрытия
+    b += txt(150, 120, "Критерии закрытия короба (ЛЮБОЙ):", 12, bold=True,
+             anchor="start")
+    for i, s in enumerate(["объём ≥ 80% (лазерный датчик)",
+                           "вес ≥ 18 кг (тензовесы)",
+                           "таймаут 20 мин (редкое направление)",
+                           "команда WCS (смена волны)"]):
+        b += txt(160, 145 + i * 20, "• " + s, 11, anchor="start")
+    b += txt(150, 250, "Факт (модель): заполнение 83,4%,", 11, anchor="start",
+             color="#2d6a4f")
+    b += txt(150, 268, "24,8 товара/короб, 4 034 короба/ч", 11, anchor="start",
+             color="#2d6a4f")
+    save("box_station.svg", W, H, b,
+         "Схема 4. КТЯ-станция: тандемная смена короба без остановки потока")
+
+
+# =========================================================== 5. управление
+def scheme_control():
+    W, H = 980, 620
+    b = DEFS
+
+    def box(x, y, w, h, c, t1, t2="", tc="#111"):
+        s = rect(x, y, w, h, c, "#345", 1.6, rx=8)
+        s += txt(x + w / 2, y + 24, t1, 13, bold=True, color=tc)
+        if t2:
+            s += txt(x + w / 2, y + 44, t2, 10, color=tc)
+        return s
+
+    b += box(330, 50, 320, 60, "#e9ecef", "WMS заказчика (внешняя)",
+             "REST API: товар → направление; события коробов")
+    b += box(330, 150, 320, 60, "#8ecae6", "WCS — управление сортировкой",
+             "маршруты, резервные порты, волны, KPI")
+    b += box(80, 270, 250, 60, "#90be6d", "FMS — диспетчер флота",
+             "MAPF-планирование, светофоры, зарядка")
+    b += box(365, 270, 250, 60, "#ffb703", "Контроллеры узлов (ПЛК)",
+             "индукция, шахты, толкатели, ленты")
+    b += box(650, 270, 250, 60, "#c9ada7", "SCADA + безопасность",
+             "СКУД ярусов, аварийные цепи, LOTO")
+    b += box(80, 400, 250, 54, "#dcd6f7", "1 380 роботов",
+             "Wi-Fi 6, телеметрия 10 Гц")
+    b += box(365, 400, 250, 54, "#dcd6f7", "120 станций/лент/шахт",
+             "PROFINET / OPC UA")
+    b += box(650, 400, 250, 54, "#dcd6f7", "Датчики и СКУД",
+             "двери, лидары зон, E-stop")
+    b += arrow(490, 110, 490, 148, "#345", 2)
+    b += txt(505, 133, "GET /item/{barcode} · POST /box/closed", 10, anchor="start")
+    for x1, y1, x2, y2 in [(430, 210, 220, 268), (490, 210, 490, 268),
+                           (550, 210, 760, 268), (205, 330, 205, 398),
+                           (490, 330, 490, 398), (775, 330, 775, 398)]:
+        b += arrow(x1, y1, x2, y2, "#345", 1.6)
+    b += txt(490, 500, "Резервирование: WCS/FMS — активный/пассивный кластер; "
+             "потеря связи с WMS → локальный кэш направлений на 30 мин", 11)
+    b += txt(490, 522, "MAPF (Multi-Agent Path Finding) — многоагентный поиск "
+             "путей без столкновений; такт перепланирования 100 мс", 11,
+             color="#555")
+    b += txt(490, 560, "В комплекте: mock-WMS (wms/mock_wms.py) + сквозной тест "
+             "интеграции (wms/demo_integration.py)", 11, color="#2d6a4f")
+    save("control.svg", W, H, b,
+         "Схема 5. Архитектура управления: WMS → WCS → FMS/ПЛК → оборудование")
+
+
+if __name__ == "__main__":
+    scheme_layout()
+    scheme_section()
+    scheme_robot()
+    scheme_box_station()
+    scheme_control()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/engine.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+engine.py — слой совместимости с SimPy.
+
+Если библиотека `simpy` установлена (входит в перечень допустимого ПО хакатона),
+используется она. Если нет — включается встроенный мини-движок дискретно-событийного
+моделирования (DES) на стандартной библиотеке Python с тем же интерфейсом
+в используемом подмножестве:
+
+    env = Environment()
+    env.process(generator)
+    env.timeout(delay)
+    env.event() -> .succeed(value) / yield
+    env.run(until=T)
+    env.now
+
+Семантика идентична SimPy для этого подмножества (FIFO-порядок при равном времени),
+поэтому результаты воспроизводимы в обеих средах.
+"""
+
+try:  # pragma: no cover
+    import simpy  # type: ignore
+
+    Environment = simpy.Environment
+    BACKEND = "simpy %s" % getattr(simpy, "__version__", "?")
+
+except ImportError:  # ---- встроенный мини-движок ----
+    import heapq
+    from itertools import count
+
+    BACKEND = "builtin-minides"
+
+    class _Event:
+        __slots__ = ("env", "callbacks", "triggered", "value")
+
+        def __init__(self, env):
+            self.env = env
+            self.callbacks = []
+            self.triggered = False
+            self.value = None
+
+        def succeed(self, value=None):
+            if self.triggered:
+                raise RuntimeError("event already triggered")
+            self.triggered = True
+            self.value = value
+            self.env._schedule(0.0, self)
+            return self
+
+    class _Timeout(_Event):
+        __slots__ = ()
+
+        def __init__(self, env, delay, value=None):
+            super().__init__(env)
+            self.triggered = True
+            self.value = value
+            env._schedule(delay, self)
+
+    class _Process(_Event):
+        __slots__ = ("gen",)
+
+        def __init__(self, env, gen):
+            super().__init__(env)
+            self.gen = gen
+            # старт процесса — немедленное событие
+            boot = _Event(env)
+            boot.triggered = True
+            boot.callbacks.append(self._resume)
+            env._schedule(0.0, boot)
+
+        def _resume(self, ev):
+            try:
+                target = self.gen.send(ev.value)
+            except StopIteration as si:
+                if not self.triggered:
+                    self.triggered = True
+                    self.value = getattr(si, "value", None)
+                    self.env._schedule(0.0, self)
+                return
+            if not isinstance(target, _Event):
+                raise TypeError("process yielded non-event: %r" % (target,))
+            target.callbacks.append(self._resume)
+
+    class Environment:
+        def __init__(self):
+            self._q = []
+            self._ids = count()
+            self.now = 0.0
+
+        # --- API, совместимый с SimPy ---
+        def timeout(self, delay, value=None):
+            if delay < 0:
+                raise ValueError("negative delay")
+            return _Timeout(self, float(delay), value)
+
+        def event(self):
+            return _Event(self)
+
+        def process(self, gen):
+            return _Process(self, gen)
+
+        def run(self, until=None):
+            q = self._q
+            if until is None:
+                until = float("inf")
+            while q:
+                t, _, ev = q[0]
+                if t > until:
+                    break
+                heapq.heappop(q)
+                self.now = t
+                cbs, ev.callbacks = ev.callbacks, []
+                for cb in cbs:
+                    cb(ev)
+            if until != float("inf"):
+                self.now = until
+
+        # --- внутреннее ---
+        def _schedule(self, delay, ev):
+            heapq.heappush(self._q, (self.now + delay, next(self._ids), ev))
+
+
+# ---------------------------------------------------------------------------
+# Общие примитивы поверх Environment (работают и с simpy, и с мини-движком).
+# Реализованы сами, чтобы не зависеть от simpy.Resource/Store и иметь
+# полностью одинаковую семантику в обеих средах.
+# ---------------------------------------------------------------------------
+
+class Slot:
+    """Ресурс с ёмкостью capacity и очередью FIFO (аналог simpy.Resource).
+
+    Использование:
+        yield slot.acquire()
+        ...
+        slot.release()
+    """
+
+    __slots__ = ("env", "capacity", "busy", "queue")
+
+    def __init__(self, env, capacity=1):
+        self.env = env
+        self.capacity = capacity
+        self.busy = 0
+        self.queue = []
+
+    def acquire(self):
+        ev = self.env.event()
+        if self.busy < self.capacity:
+            self.busy += 1
+            ev.succeed()
+        else:
+            self.queue.append(ev)
+        return ev
+
+    def release(self):
+        # capacity могла быть уменьшена на лету (сценарии отказов):
+        # тогда освобождение «поглощается» до возврата в норму.
+        if self.busy > self.capacity:
+            self.busy -= 1
+        elif self.queue:
+            ev = self.queue.pop(0)
+            ev.succeed()
+        else:
+            self.busy -= 1
+
+    def set_capacity(self, new_cap):
+        """Изменение ёмкости на лету; при росте будим ожидающих."""
+        self.capacity = new_cap
+        while self.queue and self.busy < self.capacity:
+            self.busy += 1
+            self.queue.pop(0).succeed()
+
+    @property
+    def qlen(self):
+        return len(self.queue)
+
+
+class Buffer:
+    """Очередь предметов с блокирующим получением (аналог simpy.Store)."""
+
+    __slots__ = ("env", "items", "getters")
+
+    def __init__(self, env):
+        self.env = env
+        self.items = []
+        self.getters = []
+
+    def put(self, item):
+        if self.getters:
+            ev = self.getters.pop(0)
+            ev.succeed(item)
+        else:
+            self.items.append(item)
+
+    def get(self):
+        ev = self.env.event()
+        if self.items:
+            ev.succeed(self.items.pop(0))
+        else:
+            self.getters.append(ev)
+        return ev
+
+    def __len__(self):
+        return len(self.items)
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/analytic.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+analytic.py — независимый аналитический расчёт системы АСР-100/400 «Рой».
+
+Назначение: (1) обосновать выбор параметров (флот, число станций, ярусов);
+(2) служить эталоном для валидации цифровой модели (validation).
+
+Использует те же константы из config.py, что и симуляция, но считает
+систему формулами теории массового обслуживания и баланса потоков,
+БЕЗ имитационного движка. Совпадение результатов двух независимых
+методов (<5–7%) подтверждает корректность цифровой модели.
+"""
+
+import json
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import Config  # noqa: E402
+
+
+def erlang_c(c: int, a: float) -> float:
+    """Вероятность ожидания в M/M/c (формула Эрланга C). a = λ/μ (эрланги)."""
+    if a >= c:
+        return 1.0
+    s = sum(a ** k / math.factorial(k) for k in range(c))
+    top = a ** c / math.factorial(c) * c / (c - a)
+    return top / (s + top)
+
+
+def analytic(cfg: Config | None = None) -> dict:
+    c = cfg or Config()
+    lam = c.arrival_rate_s                       # 1/с, весь СЦ
+
+    # --- геометрия/поле ---
+    W, H = c.field_w, c.field_h
+    area_tier = W * H
+    footprint = (W + 8.0) * (H + 8.0)            # плита + лестницы/техзоны
+
+    # --- средние длины плеч по РЕАЛЬНЫМ координатам компоновки ---
+    # станции: по 5 на каждой из 4 сторон; порты: матрица 21×20
+    stations = []
+    n_side = c.inductions_per_tier // 4
+    for i in range(n_side):
+        t = (i + 0.5) / n_side
+        stations += [(t * W, 0.0), (t * W, H), (0.0, t * H), (W, t * H)]
+    mx, px, py = c.perimeter_margin, c.port_pitch_x, c.port_pitch_y
+    ports = [(mx + col * px, mx + row * py)
+             for col in range(c.port_cols) for row in range(c.port_rows)]
+
+    def manh(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    # гружёный ход: станция -> порт (усреднение по всем парам)
+    leg_loaded = sum(manh(s, p) for s in stations for p in ports) \
+        / (len(stations) * len(ports)) + 4.0
+    # порожний ход: порт -> ближайшая станция (диспетчер шлёт к ближайшей)
+    leg_empty = sum(min(manh(p, s) for s in stations) for p in ports) \
+        / len(ports) + 4.0
+
+    # --- цикл робота при проектной плотности (итерация до сходимости) ---
+    lam_tier = lam / c.tiers
+    n_rob = c.robots_per_tier
+    v = c.robot_speed
+    for _ in range(30):
+        t_move = (leg_loaded + leg_empty) / v \
+            + 2 * c.avg_turns_per_leg * c.robot_turn_time
+        t_cycle = c.t_load + t_move + c.t_drop
+        moving = min(n_rob, lam_tier * t_move)         # Литтл: едущих = λ·t_move
+        load = moving / c.traffic_capacity
+        v = c.robot_speed * max(c.min_speed_factor,
+                                1.0 - c.density_slowdown * load)
+    charge_overhead = 1.0 + c.charge_time_s / c.work_before_charge_s
+    t_cycle_eff = t_cycle * charge_overhead
+    avg_leg = (leg_loaded + leg_empty) / 2.0
+    sorts_per_robot_h = 3600.0 / t_cycle_eff
+    fleet_needed_tier = lam_tier * t_cycle_eff
+    fleet_util = fleet_needed_tier / n_rob
+    capacity_tier_h = n_rob * sorts_per_robot_h
+    capacity_sys_h = capacity_tier_h * c.tiers
+
+    # --- индукция: M/M/c на ярус ---
+    mu = 1.0 / c.induction_service_mean
+    n_st = c.inductions_per_tier
+    a = lam_tier / mu
+    util_ind = a / n_st
+    pw = erlang_c(n_st, a)
+    wq = pw / (n_st * mu - lam_tier) if n_st * mu > lam_tier else float("inf")
+
+    # --- порты: пиковое направление (Ципф) и потребность в резервах ---
+    zw = [1.0 / (k ** c.zipf_s) for k in range(1, c.directions + 1)]
+    zs = sum(zw)
+    top_share = zw[0] / zs
+    top_rate_s = lam * top_share
+    port_cap_s = 1.0 / c.port_drop_occupancy          # сбросов/с на порт
+    base_ports = c.tiers                               # порт на каждом ярусе
+    top_util_base = top_rate_s / (port_cap_s * base_ports)
+    # сколько направлений требуют резервный порт (нагрузка > 80% базовых)
+    need_reserve = sum(1 for wk in zw
+                       if lam * wk / zs > 0.8 * port_cap_s * base_ports)
+    # резервов нужно (по слотам): добить каждое такое направление до <=80%
+    extra_slots = 0
+    for wk in zw:
+        r = lam * wk / zs / (0.8 * port_cap_s)
+        if r > base_ports:
+            extra_slots += math.ceil(r - base_ports)
+    top_port_util = top_rate_s / (port_cap_s * (base_ports
+                                  + (math.ceil(extra_slots / max(1, need_reserve))
+                                     * c.tiers if need_reserve else 0)))
+
+    # --- КТЯ-логистика ---
+    # короб закрывается при ПЕРЕСЕЧЕНИИ порога -> средний перелёт ~0.5 товара;
+    # параллельное ограничение по весу (18 кг)
+    items_by_vol = c.box_volume_l * c.box_fill_target / c.avg_item_volume_l + 0.5
+    items_by_wt = c.box_weight_limit / c.avg_item_weight_kg
+    items_per_box = min(items_by_vol, items_by_wt)
+    boxes_h = c.arrival_rate_h / items_per_box
+    lane_cap_h = 3600.0 / c.takeaway_time_per_box * c.takeaway_lanes
+    lane_util = boxes_h / lane_cap_h
+    erectors = math.ceil(boxes_h / 60.0 / 15.0)        # формовщик 15 кор/мин
+
+    # --- энергетика (средняя за час при номинале) ---
+    robots_total = n_rob * c.tiers
+    move_share = fleet_util                            # доля времени в цикле
+    p_robots_kw = robots_total * (move_share * c.p_move_w
+                                  + (1 - move_share) * c.p_idle_w) / 1000.0
+    p_robots_kw /= c.charge_efficiency
+    p_fixed_kw = (c.inductions_per_tier * c.tiers * c.p_induction_kw
+                  + c.lifts * c.p_lift_kw + c.p_conveyors_kw
+                  + c.p_boxline_kw + c.p_it_light_kw)
+    p_total_kw = p_robots_kw + p_fixed_kw
+    wh_per_item = 1000.0 * p_total_kw / c.arrival_rate_h
+
+    return dict(
+        field_w_m=round(W, 1), field_h_m=round(H, 1),
+        area_tier_m2=round(area_tier, 0),
+        footprint_m2=round(footprint, 0),
+        avg_leg_m=round(avg_leg, 1),
+        leg_loaded_m=round(leg_loaded, 1),
+        leg_empty_m=round(leg_empty, 1),
+        v_eff_ms=round(v, 2),
+        t_cycle_s=round(t_cycle_eff, 1),
+        sorts_per_robot_h=round(sorts_per_robot_h, 1),
+        fleet_per_tier=n_rob,
+        fleet_needed_per_tier=round(fleet_needed_tier, 0),
+        fleet_util=round(fleet_util, 3),
+        capacity_tier_h=round(capacity_tier_h, 0),
+        capacity_system_h=round(capacity_sys_h, 0),
+        induction_util=round(util_ind, 3),
+        induction_wait_s=round(wq, 2),
+        top_direction_share_pct=round(100 * top_share, 2),
+        top_port_util_base=round(top_util_base, 3),
+        top_port_util_with_reserve=round(top_port_util, 3),
+        directions_needing_reserve=need_reserve,
+        reserve_slots_needed=extra_slots,
+        items_per_box=round(items_per_box, 1),
+        boxes_per_h=round(boxes_h, 0),
+        takeaway_util=round(lane_util, 3),
+        case_erectors=erectors,
+        p_total_kw=round(p_total_kw, 0),
+        wh_per_item=round(wh_per_item, 2),
+    )
+
+
+def compare_with_sim(sim_summary: dict, an: dict) -> list[dict]:
+    """Таблица валидации: аналитика vs симуляция."""
+    rows = []
+
+    def add(name, a_val, s_val, unit=""):
+        dev = abs(a_val - s_val) / a_val * 100 if a_val else 0.0
+        rows.append(dict(metric=name, analytic=round(a_val, 2),
+                         sim=round(s_val, 2), unit=unit,
+                         deviation_pct=round(dev, 1)))
+
+    thr_cap = min(an["capacity_system_h"],
+                  Config().arrival_rate_h)  # система недогружена -> λ
+    add("Производительность", thr_cap, sim_summary["throughput_steady_h"], "шт/ч")
+    add("Утилизация роботов", an["fleet_util"], sim_summary["robot_util"])
+    add("Утилизация индукции", an["induction_util"], sim_summary["induct_util"])
+    add("Коробов в час", an["boxes_per_h"],
+        sim_summary["boxes_done"] * 1.0 / sim_summary["scenario_hours"], "КТЯ/ч")
+    add("Энергия на товар", an["wh_per_item"],
+        sim_summary["energy_wh_per_item"], "Вт·ч")
+    return rows
+
+
+if __name__ == "__main__":
+    an = analytic()
+    print(json.dumps(an, ensure_ascii=False, indent=2))
+    os.makedirs("results", exist_ok=True)
+    with open("results/analytic.json", "w", encoding="utf-8") as f:
+        json.dump(an, f, ensure_ascii=False, indent=2)
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/config.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+config.py — единый источник инженерных параметров системы АСР-100/400 «Рой».
+
+Все расчёты (analytic.py) и симуляция (model.py) берут числа ОТСЮДА,
+поэтому проектная документация, расчёты и цифровая модель согласованы.
+"""
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Config:
+    # ------------------------------------------------ поток
+    arrival_rate_h: float = 100_000.0        # товаров в час на входе (номинал)
+    directions: int = 400                    # исходящих направлений
+    zipf_s: float = 0.7                      # перекос спроса по направлениям (Ципф)
+
+    # классы товаров: доля, объём (л), масса (кг), доля хрупких внутри класса
+    item_classes: tuple = (
+        # (имя, доля, объём_л, масса_кг)
+        ("S",  0.55, 0.30, 0.15),
+        ("M",  0.30, 2.50, 0.80),
+        ("L",  0.12, 9.00, 2.20),
+        ("XL", 0.03, 28.0, 4.50),
+    )
+    fragile_share: float = 0.06              # доля хрупких товаров (мягкий сброс)
+
+    # ------------------------------------------------ геометрия яруса
+    tiers: int = 3                           # роботизированных ярусов
+    port_cols: int = 21                      # колонн портов (20 осн. + резерв/реджект)
+    port_rows: int = 20                      # рядов портов
+    port_pitch_x: float = 2.4                # шаг портов по X, м
+    port_pitch_y: float = 1.8                # шаг портов по Y, м
+    perimeter_margin: float = 6.0            # периметральная зона (индукция, магистраль), м
+    cell: float = 0.9                        # клетка сетки движения, м
+
+    main_ports_per_tier: int = 400
+    reserve_ports_per_tier: int = 16
+    reject_ports_per_tier: int = 2
+
+    # ------------------------------------------------ роботы (АМР-Т5)
+    robots_per_tier: int = 460
+    robot_speed: float = 3.0                 # крейсерская скорость, м/с
+    robot_turn_time: float = 1.2             # поворот на 90°, с
+    avg_turns_per_leg: float = 2.0           # среднее число поворотов на плечо
+    t_load: float = 3.0                      # передача товара на лоток, с
+    t_drop: float = 2.5                      # позиционирование + наклон лотка, с
+    t_drop_fragile: float = 4.5              # мягкий сброс хрупкого, с
+    density_slowdown: float = 0.60           # коэффициент замедления от плотности потока
+    min_speed_factor: float = 0.30           # нижний предел скорости при заторе
+    lane_capacity_share: float = 0.25        # доля свободных клеток = ёмкость трафика
+
+    # энергетика робота
+    p_move_w: float = 85.0                   # средняя мощность в движении, Вт
+    p_idle_w: float = 15.0                   # мощность в ожидании, Вт
+    battery_wh: float = 307.0                # LiFePO4 25,6 В × 12 А·ч
+    work_before_charge_s: float = 3.2 * 3600 # наработка до подзарядки
+    charge_time_s: float = 900.0             # подзарядка «подхватом», 15 мин
+    charge_efficiency: float = 0.88
+
+    # ------------------------------------------------ индукция (автозагрузка)
+    inductions_per_tier: int = 20
+    induction_service_mean: float = 1.80     # такт станции, с (DWS + передача)
+    induction_service_sd: float = 0.30
+    induction_buffer: int = 12               # буфер накопителя перед станцией, шт
+    no_read_rate: float = 0.003              # нечитаемый штрихкод -> реджект-порт
+    misplace_rate: float = 0.0005            # ошибка сброса не в тот порт
+    weight_check_catch: float = 0.70         # весовой контроль КТЯ ловит долю ошибок
+    damage_rate_normal: float = 0.0003       # повреждения при обычном сбросе
+    damage_rate_fragile_soft: float = 0.0003 # хрупкие при мягком сбросе
+
+    # ------------------------------------------------ порты и шахты
+    port_drop_occupancy: float = 2.5         # занятость порта на один сброс, с
+    port_queue_redirect: int = 4             # очередь у порта, после которой ищем резерв
+    chute_delay: float = 3.0                 # транзит по желобу вниз, с
+
+    # ------------------------------------------------ КТЯ-станции (низ)
+    box_volume_l: float = 83.7               # полезный объём КТЯ 600×400×400, л
+    box_fill_target: float = 0.80            # порог свапа по объёму
+    box_weight_limit: float = 18.0           # порог свапа по массе, кг
+    box_timeout_s: float = 1200.0            # закрытие частично заполненного, с
+    box_swap_time: float = 8.0               # выставление нового резерва, с
+    takeaway_lanes: int = 20                 # отводящих лент полных КТЯ
+    takeaway_time_per_box: float = 4.0   # такт толкателя на ленту, с
+    station_block_queue: int = 4             # очередь на ленту -> блокировка станции
+
+    # ------------------------------------------------ смена/энергия оборудования
+    p_induction_kw: float = 3.0
+    p_lift_kw: float = 7.5
+    lifts: int = 12
+    p_conveyors_kw: float = 120.0
+    p_boxline_kw: float = 40.0
+    p_it_light_kw: float = 60.0
+
+    # ------------------------------------------------ симуляция
+    sim_hours: float = 4.0
+    warmup_s: float = 900.0
+    seed: int = 21
+    sample_period_s: float = 60.0
+
+    # ------------------------------------------------ сценарные переключатели
+    peak_factor: float = 1.0                 # множитель входного потока
+    peak_from_s: float = 0.0
+    peak_to_s: float = 0.0
+    robot_fail_share: float = 0.0            # доля роботов, выбывших в t_fail
+    ports_fail: int = 0                      # закрытых основных портов в t_fail
+    tier_down: int = -1                      # номер яруса, отключаемого в t_fail
+    tier_down_duration: float = 1800.0
+    inductions_fail: int = 0                 # выключенных индукций в t_fail
+    t_fail_s: float = 3600.0
+
+    # производные величины -----------------------------------------------
+    @property
+    def arrival_rate_s(self) -> float:
+        return self.arrival_rate_h / 3600.0
+
+    @property
+    def field_w(self) -> float:
+        return (self.port_cols - 1) * self.port_pitch_x + 2 * self.perimeter_margin
+
+    @property
+    def field_h(self) -> float:
+        return (self.port_rows - 1) * self.port_pitch_y + 2 * self.perimeter_margin
+
+    @property
+    def free_cells(self) -> int:
+        total = int(self.field_w / self.cell) * int(self.field_h / self.cell)
+        ports = self.port_cols * self.port_rows
+        return total - ports
+
+    @property
+    def traffic_capacity(self) -> float:
+        """Сколько роботов может одновременно двигаться без коллапса трафика."""
+        return self.free_cells * self.lane_capacity_share
+
+    @property
+    def avg_item_volume_l(self) -> float:
+        return sum(sh * v for _, sh, v, _ in self.item_classes)
+
+    @property
+    def avg_item_weight_kg(self) -> float:
+        return sum(sh * w for _, sh, _, w in self.item_classes)
+
+
+SCENARIOS = {
+    "S0_base":      dict(),
+    "S1_peak15":    dict(peak_factor=1.15, peak_from_s=3600.0, peak_to_s=7200.0),
+    "S2_robots5":   dict(robot_fail_share=0.05),
+    "S3_ports10":   dict(ports_fail=10),
+    "S4_tier_down": dict(tier_down=1, tier_down_duration=1800.0),
+    "S5_induct6":   dict(inductions_fail=6),
+    "S6_skew":      dict(zipf_s=1.1),
+    "S7_stress120": dict(arrival_rate_h=120_000.0, sim_hours=2.0),
+}
+
+
+def make_config(scenario: str = "S0_base", **overrides) -> Config:
+    cfg = Config()
+    for k, v in SCENARIOS.get(scenario, {}).items():
+        setattr(cfg, k, v)
+    for k, v in overrides.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/run_all.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+run_all.py — полный прогон верификации: все сценарии + сводка + валидация + графики.
+
+Результат:
+    results/<scenario>/summary.json, timeseries.csv, latency_s.csv
+    results/summary_all.json / summary_all.md   — сводная таблица сценариев
+    results/validation.md                        — аналитика vs симуляция
+    results/plots/*.png                          — графики (если есть matplotlib)
+
+Запуск:  python sim/run_all.py           (~2–4 мин)
+         python sim/run_all.py --fast    (сокращённые горизонты, ~1 мин)
+"""
+
+import argparse
+import csv
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from config import SCENARIOS, make_config       # noqa: E402
+from analytic import analytic, compare_with_sim  # noqa: E402
+from run import run_scenario                     # noqa: E402
+
+SCEN_TITLES = {
+    "S0_base":      "Базовый режим, 100 тыс/ч, 8 ч",
+    "S1_peak15":    "Пик +15% в течение 1 ч",
+    "S2_robots5":   "Отказ 5% роботов на всех ярусах",
+    "S3_ports10":   "Отказ 10 портов яруса 1",
+    "S4_tier_down": "Полный останов яруса 2 на 30 мин",
+    "S5_induct6":   "Отказ 6 индукционных станций яруса 1",
+    "S6_skew":      "Сильный перекос спроса (Ципф s=1,1)",
+    "S7_stress120": "Стресс: вход 120 тыс/ч (поиск предела)",
+}
+
+COLS = [
+    ("throughput_steady_h", "Произв., шт/ч"),
+    ("latency_p50_s", "p50, с"),
+    ("latency_p95_s", "p95, с"),
+    ("latency_p99_s", "p99, с"),
+    ("robot_util", "Роботы, util"),
+    ("induct_util", "Индукция, util"),
+    ("boxes_done", "КТЯ закрыто"),
+    ("box_fill_avg", "Заполнение КТЯ"),
+    ("sort_accuracy_pct", "Точность, %"),
+    ("reserve_assigned", "Резерв. портов"),
+    ("station_blocks", "Блокировок"),
+    ("energy_wh_per_item", "Вт·ч/товар"),
+]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fast", action="store_true",
+                    help="сокращённые горизонты для быстрой проверки")
+    ap.add_argument("--out", default="results")
+    a = ap.parse_args()
+
+    os.makedirs(a.out, exist_ok=True)
+
+    plan = {
+        "S0_base": 8.0, "S1_peak15": 4.0, "S2_robots5": 4.0,
+        "S3_ports10": 4.0, "S4_tier_down": 4.0, "S5_induct6": 4.0,
+        "S6_skew": 4.0, "S7_stress120": 2.0,
+    }
+    if a.fast:
+        plan = {k: min(v, 1.5) for k, v in plan.items()}
+
+    all_sum = {}
+    for name in SCENARIOS:
+        print(f"[run_all] {name} ({SCEN_TITLES[name]}) ...", flush=True)
+        s = run_scenario(name, a.out, sim_hours=plan[name])
+        all_sum[name] = s
+        print(f"    произв.={s['throughput_steady_h']:.0f}/ч  "
+              f"p95={s['latency_p95_s']}с  точность={s['sort_accuracy_pct']}%  "
+              f"[{s['wall_s']}с]")
+
+    with open(os.path.join(a.out, "summary_all.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(all_sum, f, ensure_ascii=False, indent=2)
+
+    # ---------------- markdown-сводка ----------------
+    lines = ["# Сводка сценариев верификации\n",
+             "| Сценарий | Описание | " + " | ".join(t for _, t in COLS) + " |",
+             "|" + "---|" * (len(COLS) + 2)]
+    for name, s in all_sum.items():
+        row = [name, SCEN_TITLES[name]] + [str(s[k]) for k, _ in COLS]
+        lines.append("| " + " | ".join(row) + " |")
+    with open(os.path.join(a.out, "summary_all.md"), "w",
+              encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+    # ---------------- валидация ----------------
+    an = analytic(make_config("S0_base"))
+    with open(os.path.join(a.out, "analytic.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(an, f, ensure_ascii=False, indent=2)
+    rows = compare_with_sim(all_sum["S0_base"], an)
+    v = ["# Валидация цифровой модели",
+         "",
+         "Два независимых метода: аналитический расчёт (теория массового",
+         "обслуживания, баланс потоков) и имитационная модель (DES).",
+         "Совпадение подтверждает корректность обоих.",
+         "",
+         "| Метрика | Аналитика | Симуляция | Ед. | Отклонение, % |",
+         "|---|---|---|---|---|"]
+    for r in rows:
+        v.append(f"| {r['metric']} | {r['analytic']} | {r['sim']} | "
+                 f"{r['unit']} | {r['deviation_pct']} |")
+    ok = all(r["deviation_pct"] <= 7.0 for r in rows)
+    v.append("")
+    v.append("**Вывод:** отклонения "
+             + ("в пределах 7% — модель валидирована. ✅" if ok
+                else "превышают порог — см. анализ в отчёте."))
+    with open(os.path.join(a.out, "validation.md"), "w",
+              encoding="utf-8") as f:
+        f.write("\n".join(v) + "\n")
+    print("[run_all] валидация:", "OK" if ok else "ОТКЛОНЕНИЯ")
+
+    # ---------------- графики ----------------
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("[run_all] matplotlib не найден — графики пропущены")
+        return
+
+    pdir = os.path.join(a.out, "plots")
+    os.makedirs(pdir, exist_ok=True)
+
+    def load_ts(name):
+        path = os.path.join(a.out, name, "timeseries.csv")
+        with open(path, encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
+    # 1) производительность во времени: база / пик / останов яруса
+    plt.figure(figsize=(10, 5))
+    for name, style in [("S0_base", "-"), ("S1_peak15", "--"),
+                        ("S4_tier_down", "-.")]:
+        ts = load_ts(name)
+        t = [float(r["t"]) / 3600 for r in ts]
+        y = [float(r["thr_h"]) / 1000 for r in ts]
+        plt.plot(t, y, style, label=SCEN_TITLES[name])
+    plt.axhline(100, color="gray", lw=0.8, ls=":")
+    plt.xlabel("Время, ч")
+    plt.ylabel("Производительность, тыс. шт/ч")
+    plt.title("Пропускная способность: номинал, пик +15%, останов яруса")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(pdir, "throughput.png"), dpi=140)
+    plt.close()
+
+    # 2) распределение времени прохождения товара (S0)
+    with open(os.path.join(a.out, "S0_base", "latency_s.csv"),
+              encoding="utf-8") as f:
+        lat = [float(x) for x in f.read().split()[1:]]
+    lat.sort()
+    plt.figure(figsize=(10, 4.5))
+    xs = lat
+    ys = [i / len(lat) * 100 for i in range(len(lat))]
+    plt.plot(xs, ys)
+    for p, lab in [(0.5, "p50"), (0.95, "p95"), (0.99, "p99")]:
+        val = lat[int(p * len(lat)) - 1]
+        plt.axvline(val, ls="--", lw=0.8, color="tab:red")
+        plt.text(val + 1, p * 100 - 6, f"{lab}={val:.0f}с", color="tab:red")
+    plt.xlabel("Время «приёмка → короб», с")
+    plt.ylabel("Доля товаров, %")
+    plt.title("Время прохождения товара через систему (базовый режим)")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(pdir, "latency_cdf.png"), dpi=140)
+    plt.close()
+
+    # 3) очередь индукции: пик и деградация яруса
+    plt.figure(figsize=(10, 4.5))
+    for name in ["S1_peak15", "S4_tier_down", "S7_stress120"]:
+        ts = load_ts(name)
+        t = [float(r["t"]) / 3600 for r in ts]
+        q = [float(r["q_induct"]) for r in ts]
+        plt.plot(t, q, label=SCEN_TITLES[name])
+    plt.xlabel("Время, ч")
+    plt.ylabel("Очередь перед индукцией, шт")
+    plt.title("Поведение очередей в нештатных режимах")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(pdir, "queues.png"), dpi=140)
+    plt.close()
+
+    # 4) сравнение сценариев по производительности и p95
+    plt.figure(figsize=(11, 5))
+    names = list(all_sum.keys())
+    thr = [all_sum[n]["throughput_steady_h"] / 1000 for n in names]
+    ax1 = plt.gca()
+    ax1.bar(range(len(names)), thr, color="tab:blue", alpha=0.75)
+    ax1.set_xticks(range(len(names)))
+    ax1.set_xticklabels(names, rotation=25, ha="right")
+    ax1.axhline(100, color="gray", ls=":", lw=1)
+    ax1.set_ylabel("Производительность, тыс. шт/ч")
+    ax2 = ax1.twinx()
+    p95 = [all_sum[n]["latency_p95_s"] for n in names]
+    ax2.plot(range(len(names)), p95, "o-", color="tab:red")
+    ax2.set_ylabel("p95 задержки, с", color="tab:red")
+    plt.title("Итог по сценариям: пропускная способность и p95")
+    plt.tight_layout()
+    plt.savefig(os.path.join(pdir, "scenarios.png"), dpi=140)
+    plt.close()
+
+    print("[run_all] графики сохранены в", pdir)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/animate3d.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+animate3d.py — 3D-анимация системы: три яруса роботов, шахты, зона КТЯ.
+Вид «в объёме» с медленно облетающей камерой.
+
+Как и animate.py — это ИЛЛЮСТРАТИВНАЯ кинематика на реальной геометрии
+из config.py (числа берите из results/, ролик показывает устройство).
+
+Запуск:
+    python sim/animate3d.py                          # 24 c, 60 роботов/ярус
+    python sim/animate3d.py --robots 90 --seconds 30 --out docs/anim3d.mp4
+
+Выход: MP4 (нужен ffmpeg) или GIF (запасной вариант).
+Генерация ~2-4 минуты: в 3D перерисовка кадра дороже, чем в 2D.
+"""
+
+import argparse
+import os
+import random
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib import animation
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import make_config  # noqa: E402
+
+AMBER = "#ffb703"
+NAVY = "#13294b"
+PORT = "#8ecae6"
+IND = "#90be6d"
+CHUTE = "#e07b3a"
+BOX = "#c9a26b"
+SLAB = "#9db4cc"
+
+
+class Bot:
+    """Г-образные поездки «станция -> порт -> ближайшая станция»."""
+
+    def __init__(self, rng, stations, ports, speed, z):
+        self.rng, self.stations, self.ports = rng, stations, ports
+        self.speed, self.z = speed, z
+        self.x, self.y = rng.choice(stations)
+        self.loaded = False
+        self.pause = 0.0
+        self._new_target()
+
+    def _new_target(self):
+        if self.loaded:
+            self.tx, self.ty = min(self.stations,
+                                   key=lambda s: abs(s[0] - self.x) + abs(s[1] - self.y))
+        else:
+            self.tx, self.ty = self.rng.choice(self.ports)
+        self.loaded = not self.loaded
+
+    def step(self, dt):
+        if self.pause > 0:
+            self.pause -= dt
+            return
+        d = self.speed * dt
+        if abs(self.tx - self.x) > 0.05:
+            self.x += max(-d, min(d, self.tx - self.x))
+        elif abs(self.ty - self.y) > 0.05:
+            self.y += max(-d, min(d, self.ty - self.y))
+        else:
+            self.pause = 2.0 if self.loaded else 1.2
+            self._new_target()
+
+
+def slab(ax, W, H, z, alpha=0.28):
+    """Полупрозрачная плита яруса."""
+    verts = [[(0, 0, z), (W, 0, z), (W, H, z), (0, H, z)]]
+    ax.add_collection3d(Poly3DCollection(
+        verts, facecolors=SLAB, edgecolors=NAVY, linewidths=1.2, alpha=alpha))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--robots", type=int, default=60,
+                    help="роботов НА ЯРУС в кадре (реально 460 — для читаемости меньше)")
+    ap.add_argument("--seconds", type=float, default=24.0)
+    ap.add_argument("--fps", type=int, default=16)
+    ap.add_argument("--speedup", type=float, default=2.0)
+    ap.add_argument("--out", default="docs/anim3d.mp4")
+    ap.add_argument("--chutes", type=int, default=48,
+                    help="сколько шахт показать (образец из 420)")
+    a = ap.parse_args()
+
+    c = make_config("S0_base")
+    rng = random.Random(11)
+    W, H = c.field_w, c.field_h
+    tiers_z = [3.6, 6.8, 10.0]
+
+    # геометрия портов и станций — как в модели
+    mx, px, py = c.perimeter_margin, c.port_pitch_x, c.port_pitch_y
+    ports = [(mx + col * px, mx + row * py)
+             for col in range(20) for row in range(c.port_rows)]
+    n_side = c.inductions_per_tier // 4
+    stations = []
+    for i in range(n_side):
+        t = (i + 0.5) / n_side
+        stations += [(t * W, 0.0), (t * W, H), (0.0, t * H), (W, t * H)]
+
+    bots = [Bot(rng, stations, ports, c.robot_speed, z)
+            for z in tiers_z for _ in range(a.robots)]
+
+    fig = plt.figure(figsize=(12.8, 7.2), dpi=100)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_box_aspect((W, H, 40))          # вертикаль слегка растянута для читаемости
+    ax.set_xlim(0, W)
+    ax.set_ylim(0, H)
+    ax.set_zlim(0, 13)
+    ax.set_axis_off()
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+
+    # статика: пол, плиты, порты, индукции, шахты-образцы, КТЯ
+    slab(ax, W, H, 0.0, alpha=0.15)
+    for z in tiers_z:
+        slab(ax, W, H, z)
+        pxs = [p[0] for p in ports[:: max(1, len(ports) // 240)]]
+        pys = [p[1] for p in ports[:: max(1, len(ports) // 240)]]
+        ax.scatter(pxs, pys, [z + 0.06] * len(pxs), s=4, c=PORT,
+                   marker="s", depthshade=False)
+        sxs = [s_[0] for s_ in stations]
+        sys_ = [s_[1] for s_ in stations]
+        ax.scatter(sxs, sys_, [z + 0.15] * len(sxs), s=34, c=IND,
+                   marker="s", depthshade=False)
+    sample = rng.sample(ports, a.chutes)
+    for (x, y) in sample:                   # шахты вниз и короб под ними
+        ax.plot([x, x], [y, y], [0.9, tiers_z[0]], c=CHUTE, lw=1.3, alpha=0.85)
+        ax.bar3d(x - 0.5, y - 0.35, 0.0, 1.0, 0.7, 0.7,
+                 color=BOX, edgecolor="#6b4f1d", alpha=0.95, shade=True)
+
+    dots = ax.scatter([b.x for b in bots], [b.y for b in bots],
+                      [b.z + 0.25 for b in bots], s=26, c=AMBER,
+                      edgecolors="#7a5200", linewidths=0.4, depthshade=False)
+    ax.set_title("АСР-100/400 «Рой» — 3 яруса, шахты, зона КТЯ "
+                 f"(роботов в кадре: {a.robots}×3, время ×{a.speedup:g}; "
+                 "иллюстративная кинематика)", fontsize=12, color=NAVY, pad=0)
+
+    dt = a.speedup / a.fps
+    frames = int(a.seconds * a.fps)
+
+    def update(i):
+        for b in bots:
+            b.step(dt)
+        dots._offsets3d = ([b.x for b in bots], [b.y for b in bots],
+                           [b.z + 0.25 for b in bots])
+        ax.view_init(elev=22 + 4 * (i / frames),      # лёгкий подъём камеры
+                     azim=-55 + 70 * (i / frames))    # облёт на 70°
+        return (dots,)
+
+    ani = animation.FuncAnimation(fig, update, frames=frames,
+                                  interval=1000 / a.fps, blit=False)
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    try:
+        ani.save(a.out, writer=animation.FFMpegWriter(fps=a.fps, bitrate=3600))
+        print("[animate3d] сохранено:", a.out)
+    except (FileNotFoundError, RuntimeError):
+        gif = os.path.splitext(a.out)[0] + ".gif"
+        ani.save(gif, writer=animation.PillowWriter(fps=min(a.fps, 10)))
+        print("[animate3d] ffmpeg не найден — сохранён GIF:", gif)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/animate.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+animate.py — 2D-анимация движения роботов по ярусу (вид сверху).
+
+Назначение: наглядный ролик для видеодемонстрации и презентации.
+Это ИЛЛЮСТРАТИВНАЯ кинематика (роботы ездят по реальной геометрии яруса
+по манхэттеновским маршрутам «станция → порт → ближайшая станция»),
+а не покадровая выгрузка DES-модели: числа берите из results/, а этот
+ролик показывает, КАК устроено движение.
+
+Запуск:
+    python sim/animate.py                    # 20 c ролика, robots=140
+    python sim/animate.py --robots 200 --seconds 30 --out docs/tier_anim.mp4
+
+Выход: MP4 (нужен ffmpeg) или GIF (без ffmpeg, автоматический запасной
+вариант). ~1-2 мин генерации.
+"""
+
+import argparse
+import os
+import random
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib import animation, patches
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import make_config  # noqa: E402
+
+AMBER = "#ffb703"
+NAVY = "#13294b"
+PORT = "#8ecae6"
+RESV = "#ffd166"
+REJ = "#e63946"
+IND = "#90be6d"
+
+
+class Bot:
+    """Робот: едет по Г-образному маршруту (сначала X, потом Y)."""
+
+    def __init__(self, rng, stations, ports, speed):
+        self.rng = rng
+        self.stations = stations
+        self.ports = ports
+        self.speed = speed
+        self.x, self.y = rng.choice(stations)
+        self.loaded = False
+        self._new_target()
+
+    def _new_target(self):
+        if self.loaded:                       # порожний -> к ближайшей станции
+            self.tx, self.ty = min(
+                self.stations, key=lambda s: abs(s[0] - self.x) + abs(s[1] - self.y))
+        else:                                 # гружёный -> случайный порт
+            self.tx, self.ty = self.rng.choice(self.ports)
+        self.loaded = not self.loaded
+        self.pause = 0.0
+
+    def step(self, dt):
+        if self.pause > 0:                    # посадка/сброс
+            self.pause -= dt
+            return
+        d = self.speed * dt
+        if abs(self.tx - self.x) > 0.05:      # сначала по X
+            self.x += max(-d, min(d, self.tx - self.x))
+        elif abs(self.ty - self.y) > 0.05:    # потом по Y
+            self.y += max(-d, min(d, self.ty - self.y))
+        else:                                  # приехали
+            self.pause = 2.0 if self.loaded else 1.2
+            self._new_target()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--robots", type=int, default=140,
+                    help="роботов в кадре (для наглядности меньше реальных 460)")
+    ap.add_argument("--seconds", type=float, default=20.0)
+    ap.add_argument("--fps", type=int, default=20)
+    ap.add_argument("--speedup", type=float, default=2.0,
+                    help="ускорение времени в ролике")
+    ap.add_argument("--out", default="docs/tier_anim.mp4")
+    a = ap.parse_args()
+
+    c = make_config("S0_base")
+    rng = random.Random(7)
+
+    # геометрия из конфига — та же, что в модели
+    mx, px, py = c.perimeter_margin, c.port_pitch_x, c.port_pitch_y
+    ports, resv, rej = [], [], []
+    for col in range(c.port_cols):
+        for row in range(c.port_rows):
+            xy = (mx + col * px, mx + row * py)
+            if col < 20:
+                ports.append(xy)
+            elif row < 16:
+                resv.append(xy)
+            elif row < 18:
+                rej.append(xy)
+    W, H = c.field_w, c.field_h
+    stations = []
+    for i in range(c.inductions_per_tier // 4):
+        t = (i + 0.5) / (c.inductions_per_tier // 4)
+        stations += [(t * W, 0.0), (t * W, H), (0.0, t * H), (W, t * H)]
+
+    bots = [Bot(rng, stations, ports, c.robot_speed) for _ in range(a.robots)]
+
+    fig, ax = plt.subplots(figsize=(12.8, 9.6), dpi=100)
+    ax.set_xlim(-3, W + 3)
+    ax.set_ylim(-3, H + 3)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(patches.Rectangle((0, 0), W, H, fc="#f7f7f7", ec=NAVY, lw=2))
+    ax.scatter(*zip(*ports), s=14, c=PORT, marker="s", zorder=2)
+    if resv:
+        ax.scatter(*zip(*resv), s=14, c=RESV, marker="s", zorder=2)
+    if rej:
+        ax.scatter(*zip(*rej), s=18, c=REJ, marker="s", zorder=2)
+    ax.scatter(*zip(*stations), s=90, c=IND, marker="s", zorder=3,
+               edgecolors="#2d6a4f")
+    dots = ax.scatter([b.x for b in bots], [b.y for b in bots],
+                      s=42, c=AMBER, edgecolors="#7a5200", zorder=4)
+    ax.set_title(
+        f"АСР-100/400 «Рой» — ярус, вид сверху (роботов в кадре: {a.robots}, "
+        f"время ×{a.speedup:g}; иллюстративная кинематика)",
+        fontsize=13, color=NAVY)
+
+    dt = a.speedup / a.fps
+
+    def update(_):
+        for b in bots:
+            b.step(dt)
+        dots.set_offsets([(b.x, b.y) for b in bots])
+        return (dots,)
+
+    frames = int(a.seconds * a.fps)
+    ani = animation.FuncAnimation(fig, update, frames=frames,
+                                  interval=1000 / a.fps, blit=True)
+
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    try:
+        ani.save(a.out, writer=animation.FFMpegWriter(fps=a.fps, bitrate=3200))
+        print("[animate] сохранено:", a.out)
+    except (FileNotFoundError, RuntimeError):
+        gif = os.path.splitext(a.out)[0] + ".gif"
+        ani.save(gif, writer=animation.PillowWriter(fps=min(a.fps, 12)))
+        print("[animate] ffmpeg не найден — сохранён GIF:", gif)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/wms_client.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+wms_client.py — интеграционный слой «сортировщик <-> WMS».
+
+Два режима:
+  inline — распределение направлений считается внутри симуляции (быстро,
+           используется в длинных прогонах);
+  http   — на каждый товар генерируется штрихкод и выполняется реальный
+           сетевой запрос GET /api/v1/item/<barcode> к mock-WMS
+           (демонстрация требуемого сетевого взаимодействия).
+
+Оба режима дают одно и то же распределение (Ципф s=0.7), поэтому
+короткий http-прогон статистически сопоставим с inline.
+"""
+
+import json
+import urllib.request
+
+
+class WmsHttpClient:
+    def __init__(self, base_url: str, timeout: float = 2.0):
+        self.base = base_url.rstrip("/")
+        self.timeout = timeout
+        self.requests = 0
+        self._seq = 0
+
+    def next_barcode(self) -> str:
+        self._seq += 1
+        return f"OZN{self._seq:010d}"
+
+    def resolve(self, barcode: str) -> dict:
+        url = f"{self.base}/api/v1/item/{barcode}"
+        with urllib.request.urlopen(url, timeout=self.timeout) as r:
+            self.requests += 1
+            return json.loads(r.read().decode())
+
+    def box_closed(self, direction: int, items: int, weight_kg: float):
+        data = json.dumps({"direction": direction, "items": items,
+                           "weight_kg": round(weight_kg, 2)}).encode()
+        req = urllib.request.Request(
+            f"{self.base}/api/v1/box/closed", data=data,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout):
+            pass
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/run.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+run.py — запуск одного сценария.
+
+Примеры:
+    python sim/run.py                      # базовый сценарий S0_base
+    python sim/run.py S4_tier_down
+    python sim/run.py S0_base --hours 8 --seed 7
+"""
+
+import argparse
+import csv
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from config import make_config, SCENARIOS          # noqa: E402
+from model import World                             # noqa: E402
+
+
+def run_scenario(name: str, out_root: str = "results", wms_url: str = None,
+                 **overrides):
+    cfg = make_config(name, **overrides)
+    wms = None
+    if wms_url:
+        from wms_client import WmsHttpClient
+        wms = WmsHttpClient(wms_url)
+    t_wall = time.time()
+    world = World(cfg, wms=wms)
+    summary = world.run()
+    summary["scenario"] = name
+    summary["wall_s"] = round(time.time() - t_wall, 1)
+    if wms:
+        summary["wms_http_requests"] = wms.requests
+
+    out = os.path.join(out_root, name)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "summary.json"), "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    if world.series:
+        with open(os.path.join(out, "timeseries.csv"), "w", newline="",
+                  encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(world.series[0].keys()))
+            w.writeheader()
+            w.writerows(world.series)
+    with open(os.path.join(out, "latency_s.csv"), "w", encoding="utf-8") as f:
+        f.write("latency_s\n")
+        step = max(1, len(world.latencies) // 20000)   # прореживание для файла
+        for v in world.latencies[::step]:
+            f.write(f"{v:.1f}\n")
+    return summary
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("scenario", nargs="?", default="S0_base",
+                    choices=sorted(SCENARIOS.keys()))
+    ap.add_argument("--hours", type=float, default=None)
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--out", default="results")
+    ap.add_argument("--wms-url", default=None,
+                    help="адрес mock-WMS (например http://localhost:8008); "
+                         "включает разрешение направлений по сети")
+    a = ap.parse_args()
+
+    ov = {}
+    if a.hours:
+        ov["sim_hours"] = a.hours
+    if a.seed is not None:
+        ov["seed"] = a.seed
+
+    s = run_scenario(a.scenario, a.out, wms_url=a.wms_url, **ov)
+    print(json.dumps(s, ensure_ascii=False, indent=2))
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/model.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+model.py — имитационная модель (мезоуровень) системы АСР-100/400 «Рой».
+
+Моделируемая цепочка (полный жизненный цикл товара):
+  прибытие -> выбор яруса -> очередь индукции -> станция (DWS + загрузка на робота)
+  -> поездка робота -> порт (сброс) -> шахта -> КТЯ-станция (заполнение, контроль,
+  смена короба, отвод на ленту) -> закрытый короб.
+
+Трафик роботов — макромодель плотности («фундаментальная диаграмма» транспортного
+потока): эффективная скорость падает с ростом числа одновременно движущихся
+роботов на ярусе. Порты, ленты, станции — ресурсы с очередями FIFO.
+
+Ключевые механики устойчивости, воспроизводимые моделью:
+  * динамическое назначение резервных портов «горячим» направлениям
+    (у резервного порта — собственная КТЯ-станция внизу);
+  * тандемная смена КТЯ (активный/резервный короб) без остановки потока;
+  * каскадная блокировка: затор на отводящей ленте -> блок станции ->
+    закрытие её портов -> перенаправление роботов;
+  * отказы роботов / портов / индукции / целого яруса.
+"""
+
+import random
+from collections import defaultdict
+
+from engine import Environment, Slot, Buffer, BACKEND
+from config import Config
+
+REJECT = -1  # «направление» нечитаемых товаров (зона ручной обработки)
+
+
+# ---------------------------------------------------------------- сущности
+
+class Item:
+    __slots__ = ("t0", "direction", "vol", "wt", "fragile", "tier")
+
+    def __init__(self, t0, direction, vol, wt, fragile):
+        self.t0 = t0
+        self.direction = direction
+        self.vol = vol
+        self.wt = wt
+        self.fragile = fragile
+        self.tier = -1
+
+
+class Port:
+    """Порт сброса на ярусе (люк с шахтой вниз). Привязан к КТЯ-станции."""
+
+    __slots__ = ("slot", "x", "y", "closed", "station")
+
+    def __init__(self, env, x, y):
+        self.slot = Slot(env, 1)
+        self.x = x
+        self.y = y
+        self.closed = False
+        self.station = None
+
+
+class BoxStation:
+    """КТЯ-станция на отм. 0 (тандем: активный + резервный короб).
+
+    Шахты одноимённых портов всех ярусов сливаются в одну станцию.
+    """
+
+    __slots__ = ("env", "cfg", "m", "direction", "vol", "wt", "count",
+                 "first_t", "standby_ready", "blocked", "lane", "ports")
+
+    def __init__(self, env, cfg, metrics, lane):
+        self.env = env
+        self.cfg = cfg
+        self.m = metrics
+        self.direction = None      # для резервных станций назначается на лету
+        self.vol = 0.0
+        self.wt = 0.0
+        self.count = 0
+        self.first_t = None
+        self.standby_ready = True
+        self.blocked = False
+        self.lane = lane
+        self.ports = []            # порты (по одному на ярус), падающие сюда
+
+    # ---- приём товара из шахты ----
+    def add(self, item):
+        if self.count == 0:
+            self.first_t = self.env.now
+        self.count += 1
+        self.vol += item.vol
+        self.wt += item.wt
+        c = self.cfg
+        if (self.vol >= c.box_fill_target * c.box_volume_l
+                or self.wt >= c.box_weight_limit):
+            self.close_box(partial=False)
+
+    def maybe_timeout_close(self):
+        if (self.count > 0 and self.first_t is not None
+                and self.env.now - self.first_t >= self.cfg.box_timeout_s):
+            self.close_box(partial=True)
+
+    # ---- закрытие короба и логистика ----
+    def close_box(self, partial):
+        m = self.m
+        m["boxes_done"] += 1
+        if partial:
+            m["boxes_partial"] += 1
+        m["box_fill_sum"] += self.vol / self.cfg.box_volume_l
+        m["items_boxed"] += self.count
+        self.vol = self.wt = 0.0
+        self.count = 0
+        self.first_t = None
+        if self.standby_ready:
+            self.standby_ready = False           # поток мгновенно на резерв
+            self.env.process(self._restock())
+        else:                                     # резерв не успел — затор
+            self._set_blocked(True)
+            self.env.process(self._restock(unblock=True))
+        self.env.process(self._takeaway())
+
+    def _takeaway(self):
+        if self.lane.qlen >= self.cfg.station_block_queue:
+            self._set_blocked(True)
+            self.m["station_blocks"] += 1
+            yield self.lane.acquire()
+            yield self.env.timeout(self.cfg.takeaway_time_per_box)
+            self.lane.release()
+            if self.standby_ready:
+                self._set_blocked(False)
+        else:
+            yield self.lane.acquire()
+            yield self.env.timeout(self.cfg.takeaway_time_per_box)
+            self.lane.release()
+
+    def _restock(self, unblock=False):
+        yield self.env.timeout(self.cfg.box_swap_time)
+        self.standby_ready = True
+        if unblock and self.lane.qlen < self.cfg.station_block_queue:
+            self._set_blocked(False)
+
+    def _set_blocked(self, flag):
+        if self.blocked == flag:
+            return
+        self.blocked = flag
+        for p in self.ports:
+            p.closed = flag
+        if flag:
+            self.m["blocked_events"] += 1
+
+
+class Tier:
+    """Роботизированный ярус: матрица портов, флот, индукционные станции."""
+
+    def __init__(self, env, cfg, rng, metrics, index):
+        self.env = env
+        self.cfg = cfg
+        self.rng = rng
+        self.m = metrics
+        self.index = index
+        self.active = True
+
+        self.robots = Slot(env, cfg.robots_per_tier)
+        self.moving = 0
+        self.inflight = 0
+
+        mx, py, px = cfg.perimeter_margin, cfg.port_pitch_y, cfg.port_pitch_x
+        self.main_ports = {}
+        for d in range(cfg.main_ports_per_tier):
+            r, c = divmod(d, 20)
+            self.main_ports[d] = Port(env, mx + c * px, mx + r * py)
+        self.reserve_ports = [Port(env, mx + 20 * px, mx + r * py)
+                              for r in range(cfg.reserve_ports_per_tier)]
+        self.reject_ports = [Port(env, mx + 20 * px, mx + (17 + i) * py)
+                             for i in range(cfg.reject_ports_per_tier)]
+
+        # индукционные станции: по 5 на каждой из 4 сторон
+        W, H = cfg.field_w, cfg.field_h
+        self.stations_xy = []
+        n_side = cfg.inductions_per_tier // 4
+        for i in range(n_side):
+            t = (i + 0.5) / n_side
+            self.stations_xy += [(t * W, 0.0), (t * W, H),
+                                 (0.0, t * H), (W, t * H)]
+        self.station_enabled = [True] * cfg.inductions_per_tier
+        self.induction_q = Buffer(env)
+
+    # ---------- трафик ----------
+    def v_eff(self):
+        c = self.cfg
+        load = self.moving / max(1.0, c.traffic_capacity)
+        return c.robot_speed * max(c.min_speed_factor,
+                                   1.0 - c.density_slowdown * load)
+
+    def leg_time(self, x1, y1, x2, y2):
+        dist = abs(x1 - x2) + abs(y1 - y2) + 4.0
+        return (dist / self.v_eff()
+                + self.cfg.avg_turns_per_leg * self.cfg.robot_turn_time)
+
+    def nearest_station(self, x, y):
+        return min(self.stations_xy,
+                   key=lambda s: abs(s[0] - x) + abs(s[1] - y))
+
+
+# ---------------------------------------------------------------- мир
+
+class World:
+    def __init__(self, cfg: Config, wms=None):
+        self.cfg = cfg
+        self.wms = wms                 # None => inline-режим (см. wms_client.py)
+        self.env = Environment()
+        self.rng = random.Random(cfg.seed)
+        self.m = defaultdict(float)
+        self.latencies = []
+        self.series = []
+
+        # распределение спроса по направлениям (Ципф)
+        w = [1.0 / (k ** cfg.zipf_s) for k in range(1, cfg.directions + 1)]
+        s = sum(w)
+        self.dir_cum = []
+        acc = 0.0
+        for x in w:
+            acc += x / s
+            self.dir_cum.append(acc)
+
+        self.tiers = [Tier(self.env, cfg, self.rng, self.m, i)
+                      for i in range(cfg.tiers)]
+
+        # отводящие ленты и КТЯ-станции
+        self.lanes = [Slot(self.env, 1) for _ in range(cfg.takeaway_lanes)]
+        self.stations = {}
+        for d in range(cfg.directions):
+            # балансировка лент: направления чередуются по рядам (WCS-маппинг),
+            # чтобы «горячие» направления не скапливались на одной ленте
+            lane = self.lanes[d % cfg.takeaway_lanes]
+            st = BoxStation(self.env, cfg, self.m, lane)
+            st.direction = d
+            self.stations[d] = st
+            for t in self.tiers:                 # шахты трёх ярусов -> станция
+                p = t.main_ports[d]
+                p.station = st
+                st.ports.append(p)
+
+        # резервные станции (глобальный пул), связаны с reserve_ports[r] ярусов
+        self.reserve_stations = []
+        for r in range(cfg.reserve_ports_per_tier):
+            lane = self.lanes[(r * 7 + 3) % cfg.takeaway_lanes]
+            st = BoxStation(self.env, cfg, self.m, lane)
+            self.reserve_stations.append(st)
+            for t in self.tiers:
+                p = t.reserve_ports[r]
+                p.station = st
+                st.ports.append(p)
+        self.next_reserve = 0
+        self.extra = defaultdict(list)           # direction -> [reserve idx]
+
+        self.classes_cum = []
+        acc = 0.0
+        for name, share, vol, wt in cfg.item_classes:
+            acc += share
+            self.classes_cum.append((acc, vol, wt))
+
+    # ------------------------------------------------ выборки
+    def sample_direction(self):
+        u = self.rng.random()
+        lo, hi = 0, len(self.dir_cum) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if self.dir_cum[mid] < u:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    def sample_item(self):
+        if self.wms is not None:            # сетевой режим: штрихкод -> WMS
+            info = self.wms.resolve(self.wms.next_barcode())
+            wt = info["weight_g"] / 1000.0
+            vol = min((c[2] for c in self.cfg.item_classes),
+                      key=lambda v: abs(v - wt * 4))     # класс по весу
+            for _, _, v, w in self.cfg.item_classes:
+                if abs(w - wt) < 1e-6:
+                    vol = v
+                    break
+            return Item(self.env.now, info["direction"], vol, wt,
+                        info["fragile"])
+        u = self.rng.random()
+        for acc, vol, wt in self.classes_cum:
+            if u <= acc:
+                break
+        return Item(self.env.now, self.sample_direction(), vol, wt,
+                    self.rng.random() < self.cfg.fragile_share)
+
+    # ------------------------------------------------ поток на входе
+    def arrivals(self):
+        c, rng, env = self.cfg, self.rng, self.env
+        while True:
+            rate = c.arrival_rate_s
+            if c.peak_to_s > 0 and c.peak_from_s <= env.now < c.peak_to_s:
+                rate *= c.peak_factor
+            yield env.timeout(rng.expovariate(rate))
+            item = self.sample_item()
+            self.m["arrived"] += 1
+            tier = min((t for t in self.tiers if t.active),
+                       key=lambda t: t.inflight + len(t.induction_q.items))
+            item.tier = tier.index
+            tier.inflight += 1
+            tier.induction_q.put(item)
+
+    # ------------------------------------------------ индукция
+    def station_worker(self, tier: Tier, sid: int):
+        c, env, rng = self.cfg, self.env, self.rng
+        sx, sy = tier.stations_xy[sid]
+        while True:
+            if not tier.station_enabled[sid] or not tier.active:
+                yield env.timeout(5.0)
+                continue
+            item = yield tier.induction_q.get()
+            yield tier.robots.acquire()
+            svc = max(1.0, rng.gauss(c.induction_service_mean,
+                                     c.induction_service_sd))
+            yield env.timeout(svc)
+            self.m["induct_busy_s"] += svc
+            if rng.random() < c.no_read_rate:
+                item.direction = REJECT
+                self.m["rejected"] += 1
+            env.process(self.robot_trip(tier, item, sx, sy))
+
+    # ------------------------------------------------ выбор порта
+    def pick_port(self, tier: Tier, direction: int):
+        if direction == REJECT:
+            return min(tier.reject_ports, key=lambda p: p.slot.qlen)
+        cands = [tier.main_ports[direction]]
+        for r in self.extra.get(direction, []):
+            cands.append(tier.reserve_ports[r])
+        open_c = [p for p in cands if not p.closed]
+        if not open_c:
+            # направление полностью закрыто (блок станции/отказ шахты):
+            # немедленное переназначение на резервный порт+станцию
+            if self.next_reserve < self.cfg.reserve_ports_per_tier:
+                r = self.next_reserve
+                self.next_reserve += 1
+                self.extra[direction].append(r)
+                self.reserve_stations[r].direction = direction
+                self.m["reserve_assigned"] += 1
+                self.m["reserve_on_block"] += 1
+                return tier.reserve_ports[r]
+            return None
+        best = min(open_c, key=lambda p: p.slot.busy + p.slot.qlen)
+        if (best.slot.qlen >= self.cfg.port_queue_redirect
+                and self.next_reserve < self.cfg.reserve_ports_per_tier):
+            r = self.next_reserve
+            self.next_reserve += 1
+            self.extra[direction].append(r)
+            self.reserve_stations[r].direction = direction
+            self.m["reserve_assigned"] += 1
+            return tier.reserve_ports[r]
+        return best
+
+    # ------------------------------------------------ поездка робота
+    def robot_trip(self, tier: Tier, item: Item, sx, sy):
+        c, env, rng = self.cfg, self.env, self.rng
+        yield env.timeout(c.t_load)
+
+        target_dir = item.direction
+        if target_dir != REJECT and rng.random() < c.misplace_rate:
+            target_dir = rng.randrange(c.directions)      # физически не туда
+            self.m["misplaced"] += 1
+            if rng.random() < c.weight_check_catch:
+                self.m["misplace_caught"] += 1
+
+        port = self.pick_port(tier, target_dir)
+        waited = 0
+        while port is None:            # направление закрыто -> кружение в буфере
+            self.m["port_wait_closed"] += 1
+            yield env.timeout(10.0)
+            waited += 1
+            port = self.pick_port(tier, target_dir if waited <= 60 else REJECT)
+
+        t1 = tier.leg_time(sx, sy, port.x, port.y)
+        tier.moving += 1
+        yield env.timeout(t1)
+        tier.moving -= 1
+        self.m["move_s"] += t1
+
+        yield port.slot.acquire()
+        tdrop = c.t_drop_fragile if item.fragile else c.t_drop
+        yield env.timeout(tdrop)
+        port.slot.release()
+        self.m["move_s"] += tdrop
+
+        if rng.random() < (c.damage_rate_fragile_soft if item.fragile
+                           else c.damage_rate_normal):
+            self.m["damaged"] += 1
+
+        env.process(self.chute_then_box(item, port, tier))
+
+        bx, by = tier.nearest_station(port.x, port.y)     # порожний ход
+        t2 = tier.leg_time(port.x, port.y, bx, by)
+        tier.moving += 1
+        yield env.timeout(t2)
+        tier.moving -= 1
+        self.m["move_s"] += t2
+
+        cycle = t1 + t2 + tdrop + c.t_load
+        if rng.random() < cycle / c.work_before_charge_s:  # зарядка «подхватом»
+            self.m["charges"] += 1
+            yield env.timeout(c.charge_time_s)
+        tier.robots.release()
+
+    # ------------------------------------------------ шахта и короб
+    def chute_then_box(self, item: Item, port: Port, tier: Tier):
+        yield self.env.timeout(self.cfg.chute_delay)
+        tier.inflight -= 1
+        self.m["done"] += 1
+        st = port.station
+        if st is None:                                    # реджект-порт
+            self.m["reject_boxed"] += 1
+            return
+        st.add(item)
+        if self.env.now >= self.cfg.warmup_s:
+            self.latencies.append(self.env.now - item.t0)
+        if st.direction != item.direction:
+            self.m["missort_in_box"] += 1
+
+    # ------------------------------------------------ сервис и отказы
+    def box_timeout_patrol(self):
+        while True:
+            yield self.env.timeout(60.0)
+            for st in self.stations.values():
+                st.maybe_timeout_close()
+            for st in self.reserve_stations:
+                st.maybe_timeout_close()
+
+    def sampler(self):
+        c, env = self.cfg, self.env
+        last_done = 0.0
+        while True:
+            yield env.timeout(c.sample_period_s)
+            done = self.m["done"]
+            row = dict(
+                t=round(env.now, 0),
+                thr_h=round((done - last_done) * 3600.0 / c.sample_period_s, 0),
+                in_system=sum(t.inflight for t in self.tiers),
+                q_induct=sum(len(t.induction_q.items) for t in self.tiers),
+                robots_busy=sum(t.robots.busy for t in self.tiers),
+                moving=sum(t.moving for t in self.tiers),
+                boxes=int(self.m["boxes_done"]),
+                blocked=sum(1 for s in self.stations.values() if s.blocked),
+            )
+            self.m["robot_busy_int"] += row["robots_busy"] * c.sample_period_s
+            self.series.append(row)
+            last_done = done
+
+    def fault_injector(self):
+        c, env, rng = self.cfg, self.env, self.rng
+        if not any([c.robot_fail_share, c.ports_fail, c.tier_down >= 0,
+                    c.inductions_fail]):
+            return
+        yield env.timeout(c.t_fail_s)
+        if c.robot_fail_share:
+            for t in self.tiers:
+                k = int(t.robots.capacity * c.robot_fail_share)
+                t.robots.set_capacity(t.robots.capacity - k)
+            self.m["evt_robot_fail"] = env.now
+        if c.ports_fail:
+            for d in rng.sample(range(c.directions), c.ports_fail):
+                self.tiers[0].main_ports[d].closed = True
+            self.m["evt_ports_fail"] = env.now
+        if c.inductions_fail:
+            for i in range(c.inductions_fail):
+                self.tiers[0].station_enabled[i] = False
+            self.m["evt_induct_fail"] = env.now
+        if c.tier_down >= 0:
+            t = self.tiers[c.tier_down]
+            t.active = False
+            saved = t.robots.capacity
+            t.robots.set_capacity(0)
+            self.m["evt_tier_down"] = env.now
+            yield env.timeout(c.tier_down_duration)
+            t.active = True
+            t.robots.set_capacity(saved)
+            self.m["evt_tier_up"] = env.now
+
+    # ------------------------------------------------ запуск и итоги
+    def run(self):
+        env, c = self.env, self.cfg
+        env.process(self.arrivals())
+        for t in self.tiers:
+            for sid in range(c.inductions_per_tier):
+                env.process(self.station_worker(t, sid))
+        env.process(self.box_timeout_patrol())
+        env.process(self.sampler())
+        env.process(self.fault_injector())
+        env.run(until=c.sim_hours * 3600.0)
+        return self.summary()
+
+    def summary(self):
+        c, m = self.cfg, self.m
+        T = c.sim_hours * 3600.0
+        lat = sorted(self.latencies)
+
+        def pct(p):
+            return lat[min(len(lat) - 1, int(p * len(lat)))] if lat else 0.0
+
+        steady_T = T - c.warmup_s
+        thr = (len(lat) + m["reject_boxed"] * steady_T / T) * 3600.0 / steady_T
+
+        robot_cap = sum(t.robots.capacity for t in self.tiers) or 1
+        busy_int = m["robot_busy_int"]
+        e_robots_kwh = ((m["move_s"] / 3600.0) * c.p_move_w
+                        + max(0.0, robot_cap * T - busy_int) / 3600.0
+                        * c.p_idle_w) / 1000.0 / c.charge_efficiency
+        e_fixed_kwh = (c.inductions_per_tier * c.tiers * c.p_induction_kw
+                       + c.lifts * c.p_lift_kw + c.p_conveyors_kw
+                       + c.p_boxline_kw + c.p_it_light_kw) * c.sim_hours
+        done = max(1.0, m["done"])
+        undetected = m["misplaced"] - m["misplace_caught"]
+
+        return dict(
+            backend=BACKEND,
+            scenario_hours=c.sim_hours,
+            arrived=int(m["arrived"]),
+            done=int(m["done"]),
+            throughput_steady_h=round(thr, 0),
+            latency_p50_s=round(pct(0.50), 1),
+            latency_p95_s=round(pct(0.95), 1),
+            latency_p99_s=round(pct(0.99), 1),
+            in_system_end=int(sum(t.inflight for t in self.tiers)),
+            q_induct_end=int(sum(len(t.induction_q.items) for t in self.tiers)),
+            robot_util=round(busy_int / (robot_cap * T), 3),
+            induct_util=round(m["induct_busy_s"]
+                              / (c.inductions_per_tier * c.tiers * T), 3),
+            boxes_done=int(m["boxes_done"]),
+            boxes_partial=int(m["boxes_partial"]),
+            box_fill_avg=round(m["box_fill_sum"] / max(1, m["boxes_done"]), 3),
+            rejected_pct=round(100 * m["rejected"] / done, 3),
+            misplaced_pct=round(100 * m["misplaced"] / done, 4),
+            missort_undetected_pct=round(100 * undetected / done, 4),
+            damaged_pct=round(100 * m["damaged"] / done, 4),
+            sort_accuracy_pct=round(
+                100 * (1 - undetected / done - m["damaged"] / done), 3),
+            reserve_assigned=int(m["reserve_assigned"]),
+            station_blocks=int(m["station_blocks"]),
+            blocked_events=int(m["blocked_events"]),
+            port_wait_closed=int(m["port_wait_closed"]),
+            charges=int(m["charges"]),
+            energy_kwh=round(e_robots_kwh + e_fixed_kwh, 0),
+            energy_wh_per_item=round(
+                1000.0 * (e_robots_kwh + e_fixed_kwh) / done, 2),
+        )
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/sim/__pycache__/animate.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+animate.py — 2D-анимация движения роботов по ярусу (вид сверху).
+
+Назначение: наглядный ролик для видеодемонстрации и презентации.
+Это ИЛЛЮСТРАТИВНАЯ кинематика (роботы ездят по реальной геометрии яруса
+по манхэттеновским маршрутам «станция → порт → ближайшая станция»),
+а не покадровая выгрузка DES-модели: числа берите из results/, а этот
+ролик показывает, КАК устроено движение.
+
+Запуск:
+    python sim/animate.py                    # 20 c ролика, robots=140
+    python sim/animate.py --robots 200 --seconds 30 --out docs/tier_anim.mp4
+
+Выход: MP4 (нужен ffmpeg) или GIF (без ffmpeg, автоматический запасной
+вариант). ~1-2 мин генерации.
+"""
+
+import argparse
+import os
+import random
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib import animation, patches
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import make_config  # noqa: E402
+
+AMBER = "#ffb703"
+NAVY = "#13294b"
+PORT = "#8ecae6"
+RESV = "#ffd166"
+REJ = "#e63946"
+IND = "#90be6d"
+
+
+class Bot:
+    """Робот: едет по Г-образному маршруту (сначала X, потом Y)."""
+
+    def __init__(self, rng, stations, ports, speed):
+        self.rng = rng
+        self.stations = stations
+        self.ports = ports
+        self.speed = speed
+        self.x, self.y = rng.choice(stations)
+        self.loaded = False
+        self._new_target()
+
+    def _new_target(self):
+        if self.loaded:                       # порожний -> к ближайшей станции
+            self.tx, self.ty = min(
+                self.stations, key=lambda s: abs(s[0] - self.x) + abs(s[1] - self.y))
+        else:                                 # гружёный -> случайный порт
+            self.tx, self.ty = self.rng.choice(self.ports)
+        self.loaded = not self.loaded
+        self.pause = 0.0
+
+    def step(self, dt):
+        if self.pause > 0:                    # посадка/сброс
+            self.pause -= dt
+            return
+        d = self.speed * dt
+        if abs(self.tx - self.x) > 0.05:      # сначала по X
+            self.x += max(-d, min(d, self.tx - self.x))
+        elif abs(self.ty - self.y) > 0.05:    # потом по Y
+            self.y += max(-d, min(d, self.ty - self.y))
+        else:                                  # приехали
+            self.pause = 2.0 if self.loaded else 1.2
+            self._new_target()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--robots", type=int, default=140,
+                    help="роботов в кадре (для наглядности меньше реальных 460)")
+    ap.add_argument("--seconds", type=float, default=20.0)
+    ap.add_argument("--fps", type=int, default=20)
+    ap.add_argument("--speedup", type=float, default=2.0,
+                    help="ускорение времени в ролике")
+    ap.add_argument("--out", default="docs/tier_anim.mp4")
+    a = ap.parse_args()
+
+    c = make_config("S0_base")
+    rng = random.Random(7)
+
+    # геометрия из конфига — та же, что в модели
+    mx, px, py = c.perimeter_margin, c.port_pitch_x, c.port_pitch_y
+    ports, resv, rej = [], [], []
+    for col in range(c.port_cols):
+        for row in range(c.port_rows):
+            xy = (mx + col * px, mx + row * py)
+            if col < 20:
+                ports.append(xy)
+            elif row < 16:
+                resv.append(xy)
+            elif row < 18:
+                rej.append(xy)
+    W, H = c.field_w, c.field_h
+    stations = []
+    for i in range(c.inductions_per_tier // 4):
+        t = (i + 0.5) / (c.inductions_per_tier // 4)
+        stations += [(t * W, 0.0), (t * W, H), (0.0, t * H), (W, t * H)]
+
+    bots = [Bot(rng, stations, ports, c.robot_speed) for _ in range(a.robots)]
+
+    fig, ax = plt.subplots(figsize=(12.8, 9.6), dpi=100)
+    ax.set_xlim(-3, W + 3)
+    ax.set_ylim(-3, H + 3)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(patches.Rectangle((0, 0), W, H, fc="#f7f7f7", ec=NAVY, lw=2))
+    ax.scatter(*zip(*ports), s=14, c=PORT, marker="s", zorder=2)
+    if resv:
+        ax.scatter(*zip(*resv), s=14, c=RESV, marker="s", zorder=2)
+    if rej:
+        ax.scatter(*zip(*rej), s=18, c=REJ, marker="s", zorder=2)
+    ax.scatter(*zip(*stations), s=90, c=IND, marker="s", zorder=3,
+               edgecolors="#2d6a4f")
+    dots = ax.scatter([b.x for b in bots], [b.y for b in bots],
+                      s=42, c=AMBER, edgecolors="#7a5200", zorder=4)
+    ax.set_title(
+        f"АСР-100/400 «Рой» — ярус, вид сверху (роботов в кадре: {a.robots}, "
+        f"время ×{a.speedup:g}; иллюстративная кинематика)",
+        fontsize=13, color=NAVY)
+
+    dt = a.speedup / a.fps
+
+    def update(_):
+        for b in bots:
+            b.step(dt)
+        dots.set_offsets([(b.x, b.y) for b in bots])
+        return (dots,)
+
+    frames = int(a.seconds * a.fps)
+    ani = animation.FuncAnimation(fig, update, frames=frames,
+                                  interval=1000 / a.fps, blit=True)
+
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    try:
+        ani.save(a.out, writer=animation.FFMpegWriter(fps=a.fps, bitrate=3200))
+        print("[animate] сохранено:", a.out)
+    except (FileNotFoundError, RuntimeError):
+        gif = os.path.splitext(a.out)[0] + ".gif"
+        ani.save(gif, writer=animation.PillowWriter(fps=min(a.fps, 12)))
+        print("[animate] ffmpeg не найден — сохранён GIF:", gif)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/wms/demo_integration.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+demo_integration.py — сквозная демонстрация сетевого взаимодействия.
+
+Что делает:
+  1) поднимает mock-WMS в отдельном процессе (порт 8008);
+  2) запускает короткую симуляцию (72 c модельного времени), где направление
+     КАЖДОГО товара запрашивается по HTTP: GET /api/v1/item/<barcode>;
+  3) отправляет событие закрытия короба: POST /api/v1/box/closed;
+  4) сверяет счётчики WMS с числом товаров в симуляции.
+
+Запуск:  python wms/demo_integration.py
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, "sim"))
+
+PORT = 8008
+BASE = f"http://127.0.0.1:{PORT}"
+
+
+def wait_health(timeout=10):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        try:
+            with urllib.request.urlopen(BASE + "/health", timeout=1) as r:
+                if json.loads(r.read())["status"] == "ok":
+                    return True
+        except Exception:
+            time.sleep(0.2)
+    return False
+
+
+def main():
+    srv = subprocess.Popen([sys.executable,
+                            os.path.join(HERE, "mock_wms.py"),
+                            "--port", str(PORT)])
+    try:
+        assert wait_health(), "mock-WMS не поднялся"
+        print(f"[demo] mock-WMS доступен: {BASE}/health -> ok")
+
+        from run import run_scenario
+        from wms_client import WmsHttpClient
+
+        s = run_scenario("S0_base", out_root=os.path.join(ROOT, "results"),
+                         wms_url=BASE, sim_hours=0.02, warmup_s=10.0)
+        print(f"[demo] симуляция: товаров обработано={s['done']}, "
+              f"HTTP-запросов к WMS={s['wms_http_requests']}")
+
+        cli = WmsHttpClient(BASE)
+        cli.box_closed(direction=17, items=24, weight_kg=16.8)
+        with urllib.request.urlopen(BASE + "/api/v1/stats", timeout=2) as r:
+            stats = json.loads(r.read())
+        print(f"[demo] счётчики WMS: {stats}")
+
+        ok = (stats["item_requests"] >= s["done"]
+              and stats["box_events"] >= 1)
+        print("[demo] ИНТЕГРАЦИЯ:", "OK ✅" if ok else "FAIL ❌")
+        sys.exit(0 if ok else 1)
+    finally:
+        srv.terminate()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/wms/mock_wms.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+mock_wms.py — имитация внешней WMS (Warehouse Management System).
+
+Роль в системе: сортировщик считывает штрихкод и по сети спрашивает WMS,
+куда ехать товару. Здесь — детерминированная заглушка: ответ вычисляется
+из штрихкода (хеш), поэтому воспроизводим и не требует базы данных.
+
+Только стандартная библиотека Python — никаких зависимостей.
+
+API (JSON):
+  GET  /health                        -> {"status": "ok"}
+  GET  /api/v1/item/<barcode>         -> направление, вес, габариты, хрупкость
+  POST /api/v1/box/closed             -> подтверждение приёма события
+  GET  /api/v1/stats                  -> счётчики запросов
+
+Запуск:  python wms/mock_wms.py --port 8008
+"""
+
+import argparse
+import hashlib
+import json
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+DIRECTIONS = 400
+ZIPF_S = 0.7
+
+# кумулятивное распределение Ципфа — как в симуляции
+_w = [1.0 / (k ** ZIPF_S) for k in range(1, DIRECTIONS + 1)]
+_s = sum(_w)
+_CUM = []
+_acc = 0.0
+for _x in _w:
+    _acc += _x / _s
+    _CUM.append(_acc)
+
+STATS = {"item_requests": 0, "box_events": 0, "started": time.time()}
+
+
+def _u01(barcode: str, salt: str) -> float:
+    """Детерминированное число [0,1) из штрихкода."""
+    h = hashlib.sha256((salt + barcode).encode()).digest()
+    return int.from_bytes(h[:8], "big") / 2 ** 64
+
+
+def resolve_item(barcode: str) -> dict:
+    u = _u01(barcode, "dir")
+    lo, hi = 0, DIRECTIONS - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if _CUM[mid] < u:
+            lo = mid + 1
+        else:
+            hi = mid
+    v = _u01(barcode, "cls")
+    if v < 0.55:
+        dims, wt = (180, 120, 60), 300
+    elif v < 0.85:
+        dims, wt = (250, 200, 120), 900
+    elif v < 0.97:
+        dims, wt = (350, 280, 200), 2200
+    else:
+        dims, wt = (400, 320, 280), 4200
+    return {
+        "barcode": barcode,
+        "direction": lo,
+        "weight_g": wt,
+        "dims_mm": list(dims),
+        "fragile": _u01(barcode, "frg") < 0.06,
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):            # тишина в консоли
+        pass
+
+    def _json(self, code, obj):
+        body = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._json(200, {"status": "ok"})
+        elif self.path.startswith("/api/v1/item/"):
+            STATS["item_requests"] += 1
+            self._json(200, resolve_item(self.path.rsplit("/", 1)[-1]))
+        elif self.path == "/api/v1/stats":
+            self._json(200, dict(STATS, uptime_s=round(
+                time.time() - STATS["started"], 1)))
+        else:
+            self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path == "/api/v1/box/closed":
+            n = int(self.headers.get("Content-Length", 0))
+            _ = self.rfile.read(n)
+            STATS["box_events"] += 1
+            self._json(200, {"accepted": True})
+        else:
+            self._json(404, {"error": "not found"})
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8008)
+    a = ap.parse_args()
+    srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
+    print(f"[mock-wms] слушаю порт {a.port} "
+          f"(GET /api/v1/item/<barcode>, POST /api/v1/box/closed)")
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/cad/generate_layout.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+generate_layout.py — параметрическая 3D-компоновка АСР-100/400 «Рой»
+для FreeCAD 0.21+ (проверено на 0.21.2 и 1.0).
+
+Что строит (упрощённые твёрдые тела, для компоновочной проверки
+и рендеров, не для деталировки):
+  * плиты трёх ярусов с вырезами-портами 21×20;
+  * колонны каркаса;
+  * шахты (трубы) от портов первого яруса до отм. КТЯ (образец: первые
+    3 ряда, чтобы модель оставалась лёгкой; полный режим — FULL_CHUTES);
+  * КТЯ-станции (короб + рамка) под шахтами-образцами;
+  * индукционные станции по периметру каждого яруса;
+  * 12 наклонных лент подачи;
+  * 20 отводящих лент на отм. 0;
+  * роботы-габариты (по 24 шт/ярус для наглядности).
+
+Как запустить:
+  1) FreeCAD → Macro → Macros… → создать «robozon_layout» → вставить файл
+     → Execute;  или из консоли:
+       freecadcmd cad/generate_layout.py
+  2) Результат: документ «ASR100_400» + экспорт cad/asr100_400.step
+     (и cad/asr100_400_preview.png, если запущено с GUI).
+
+Все размеры — в мм (стандарт FreeCAD). Параметры — блок PARAMS.
+"""
+
+import os
+
+import FreeCAD as App
+import Part
+
+# --------------------------------------------------------------- PARAMS
+PARAMS = dict(
+    tiers=3,
+    tier_z=[3600.0, 6800.0, 10000.0],   # отметки ярусов, мм
+    slab_t=180.0,                        # толщина плиты
+    field_w=60000.0, field_h=46200.0,    # поле яруса
+    margin=3000.0,                       # периметр до первого порта
+    port_cols=21, port_rows=20,
+    pitch_x=2400.0, pitch_y=1800.0,
+    port_w=800.0, port_l=600.0,          # вырез порта
+    chute_d=500.0, chute_wall=6.0,
+    col_step=12000.0, col_a=400.0,       # колонны
+    box_w=600.0, box_l=400.0, box_h=400.0,
+    robot=(720.0, 540.0, 330.0),
+    robots_preview_per_tier=24,
+    FULL_CHUTES=False,                    # True = все 1254 шахты (тяжело)
+)
+
+DOCNAME = "ASR100_400"
+HERE = os.path.dirname(os.path.abspath(__file__)) or "."
+
+
+def make_doc():
+    if DOCNAME in App.listDocuments():
+        App.closeDocument(DOCNAME)
+    return App.newDocument(DOCNAME)
+
+
+def add(doc, shape, name, color=(0.7, 0.7, 0.7)):
+    obj = doc.addObject("Part::Feature", name)
+    obj.Shape = shape
+    if App.GuiUp:
+        obj.ViewObject.ShapeColor = color
+    return obj
+
+
+def port_centers(p):
+    xs = [p["margin"] + c * p["pitch_x"] for c in range(p["port_cols"])]
+    ys = [p["margin"] + r * p["pitch_y"] for r in range(p["port_rows"])]
+    return xs, ys
+
+
+def build():
+    p = PARAMS
+    doc = make_doc()
+    xs, ys = port_centers(p)
+
+    # ---- плиты ярусов с вырезами портов
+    for ti in range(p["tiers"]):
+        z = p["tier_z"][ti]
+        slab = Part.makeBox(p["field_w"], p["field_h"], p["slab_t"],
+                            App.Vector(0, 0, z))
+        holes = []
+        for x in xs:
+            for y in ys:
+                holes.append(Part.makeBox(
+                    p["port_w"], p["port_l"], p["slab_t"] + 2,
+                    App.Vector(x - p["port_w"] / 2, y - p["port_l"] / 2,
+                               z - 1)))
+        slab = slab.cut(Part.makeCompound(holes))
+        add(doc, slab, f"Slab_T{ti+1}", (0.55, 0.68, 0.80))
+
+        # индукции по периметру: 5 на сторону
+        for i in range(5):
+            t = (i + 0.5) / 5
+            for (x, y) in [(t * p["field_w"], -1500.0),
+                           (t * p["field_w"], p["field_h"] + 300.0),
+                           (-1500.0, t * p["field_h"]),
+                           (p["field_w"] + 300.0, t * p["field_h"])]:
+                st = Part.makeBox(1200, 1200, 900,
+                                  App.Vector(x - 600, y - 600,
+                                             z + p["slab_t"]))
+                add(doc, st, f"Induct_T{ti+1}_{i}_{int(x)}_{int(y)}",
+                    (0.42, 0.72, 0.35))
+
+        # роботы-габариты для наглядности
+        rw, rl, rh = p["robot"]
+        n = p["robots_preview_per_tier"]
+        for k in range(n):
+            gx = p["margin"] + (k % 8) * 7000.0 + 1200.0
+            gy = p["margin"] + (k // 8) * 13000.0 + 900.0
+            rb = Part.makeBox(rw, rl, rh,
+                              App.Vector(gx, gy, z + p["slab_t"]))
+            add(doc, rb, f"Robot_T{ti+1}_{k}", (1.0, 0.72, 0.02))
+
+    # ---- колонны каркаса
+    nx = int(p["field_w"] // p["col_step"]) + 1
+    ny = int(p["field_h"] // p["col_step"]) + 1
+    top = p["tier_z"][-1] + p["slab_t"]
+    for i in range(nx):
+        for j in range(ny):
+            col = Part.makeBox(p["col_a"], p["col_a"], top,
+                               App.Vector(i * p["col_step"] - p["col_a"] / 2,
+                                          j * p["col_step"] - p["col_a"] / 2,
+                                          0))
+            add(doc, col, f"Col_{i}_{j}", (0.45, 0.45, 0.5))
+
+    # ---- шахты и КТЯ-станции (образец: первые 3 ряда либо все)
+    rows = range(p["port_rows"]) if p["FULL_CHUTES"] else range(3)
+    z_top = p["tier_z"][0]
+    for r in rows:
+        for x in xs[:20]:                      # 20 основных колонок
+            y = ys[r]
+            outer = Part.makeCylinder(p["chute_d"] / 2, z_top - 900.0,
+                                      App.Vector(x, y, 900.0))
+            inner = Part.makeCylinder(p["chute_d"] / 2 - p["chute_wall"],
+                                      z_top - 900.0,
+                                      App.Vector(x, y, 899.0))
+            add(doc, outer.cut(inner), f"Chute_{r}_{int(x)}",
+                (0.9, 0.55, 0.25))
+            box = Part.makeBox(p["box_w"], p["box_l"], p["box_h"],
+                               App.Vector(x - p["box_w"] / 2,
+                                          y - p["box_l"] / 2, 400.0))
+            add(doc, box, f"KTYA_{r}_{int(x)}", (0.82, 0.68, 0.45))
+
+    # ---- наклонные ленты подачи (12) и отводящие (20)
+    for k in range(12):
+        ti = k % 3
+        z = p["tier_z"][ti] + p["slab_t"]
+        length = (z ** 2 + (z * 2.2) ** 2) ** 0.5
+        belt = Part.makeBox(length, 800, 120)
+        belt.rotate(App.Vector(0, 0, 0), App.Vector(0, 1, 0), -24.5)
+        belt.translate(App.Vector(-z * 2.2 - 1500,
+                                  4000 + (k // 3) * 11000, 0))
+        add(doc, belt, f"InfeedBelt_{k}", (0.18, 0.42, 0.31))
+    for k in range(20):
+        y = p["margin"] + k * p["pitch_y"] - 600
+        belt = Part.makeBox(p["field_w"] + 8000, 700, 100,
+                            App.Vector(-2000, y, 950))
+        add(doc, belt, f"Takeaway_{k}", (0.66, 0.7, 0.74))
+
+    doc.recompute()
+
+    # ---- экспорт
+    step_path = os.path.join(HERE, "asr100_400.step")
+    Part.export([o for o in doc.Objects], step_path)
+    App.Console.PrintMessage(f"[layout] STEP: {step_path}\n")
+
+    if App.GuiUp:
+        import FreeCADGui as Gui
+        Gui.activeDocument().activeView().viewAxometric()
+        Gui.SendMsgToActiveView("ViewFit")
+        png = os.path.join(HERE, "asr100_400_preview.png")
+        Gui.activeDocument().activeView().saveImage(png, 1920, 1080, "White")
+        App.Console.PrintMessage(f"[layout] PNG: {png}\n")
+
+
+build()
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/cad/blender_anim.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+blender_anim.py — фотореалистичная 3D-анимация АСР-100/400 «Рой» в Blender.
+
+Скрипт сам строит сцену (3 яруса, порты, шахты, короба, роботы),
+анимирует роботов той же Г-образной кинематикой, что animate.py,
+ставит камеру с облётом, свет — и рендерит MP4.
+
+УСТАНОВКА Blender на Fedora (любой вариант):
+    sudo dnf install blender
+    # или: flatpak install flathub org.blender.Blender
+
+ЗАПУСК (фоновый рендер, без окна):
+    blender -b -P cad/blender_anim.py
+    # flatpak-вариант:
+    flatpak run org.blender.Blender -b -P cad/blender_anim.py
+
+Результат: cad/roy_3d.mp4 (1920×1080, 24 кадра/с, ~20 c).
+На RTX 3060 рендер ~3-8 минут (EEVEE) или ~15-25 минут (Cycles).
+
+Если фоновый EEVEE-рендер упадёт с ошибкой про GPU/EGL (бывает без
+монитора) — запусти БЕЗ «-b»: откроется окно с готовой сценой,
+дальше просто нажми Ctrl+F12 (рендер анимации).
+
+Параметры — в блоке НАСТРОЙКИ ниже.
+"""
+
+import math
+import os
+import random
+import subprocess
+
+import bpy
+
+# ----------------------------------------------------------- НАСТРОЙКИ
+SECONDS = 20          # длительность ролика
+FPS = 24
+ROBOTS_PER_TIER = 70  # в кадре (реально 460 — для читаемости меньше)
+SPEEDUP = 2.0         # ускорение времени
+CHUTES_SAMPLE = 40    # сколько шахт показать (из 420)
+RES_X, RES_Y = 1920, 1080
+
+# геометрия (метры) — синхронизирована с sim/config.py
+FIELD_W, FIELD_H = 60.0, 46.2
+TIERS_Z = [3.6, 6.8, 10.0]
+SLAB_T = 0.18
+MARGIN, PITCH_X, PITCH_Y = 3.0, 2.4, 1.8
+PORT_COLS, PORT_ROWS = 20, 20      # рисуем основные 20×20
+INDUCTIONS = 20
+ROBOT_SPEED = 3.0
+ROBOT_DIMS = (0.72, 0.54, 0.33)
+
+rng = random.Random(7)
+
+# новые ключевые кадры сразу с линейным движением (без «плаваний» на углах);
+# работает во всех версиях, в отличие от правки кривых после
+try:
+    bpy.context.preferences.edit.keyframe_new_interpolation_type = "LINEAR"
+except Exception:
+    pass
+
+# ----------------------------------------------------------- сцена с нуля
+bpy.ops.wm.read_factory_settings(use_empty=True)
+scene = bpy.context.scene
+scene.render.resolution_x = RES_X
+scene.render.resolution_y = RES_Y
+scene.render.fps = FPS
+scene.frame_start = 1
+scene.frame_end = SECONDS * FPS
+
+# движок: пробуем EEVEE Next (Blender 4.2+) -> EEVEE -> Cycles на GPU
+engine_set = False
+for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+    try:
+        scene.render.engine = eng
+        engine_set = True
+        break
+    except TypeError:
+        continue
+if engine_set and hasattr(scene, "eevee"):
+    try:
+        scene.eevee.taa_render_samples = 24
+    except AttributeError:
+        pass
+if not engine_set:
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = 24
+    scene.cycles.use_denoising = True
+    try:
+        prefs = bpy.context.preferences.addons["cycles"].preferences
+        for dev_type in ("OPTIX", "CUDA"):
+            try:
+                prefs.compute_device_type = dev_type
+                break
+            except TypeError:
+                continue
+        prefs.get_devices()
+        for d in prefs.devices:
+            d.use = True
+        scene.cycles.device = "GPU"
+    except Exception:
+        pass  # останется CPU — просто медленнее
+
+# вывод: Blender 4.x умеет писать MP4 сам; в Blender 5.x видеовывод
+# убрали — рендерим PNG-кадры и склеиваем их ffmpeg'ом после рендера
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(HERE, "render3d")          # сюда лягут кадры
+OUT_MP4 = os.path.join(HERE, "roy_3d.mp4")
+
+video_direct = True
+try:
+    scene.render.image_settings.file_format = "FFMPEG"
+    scene.render.ffmpeg.format = "MPEG4"
+    scene.render.ffmpeg.codec = "H264"
+    scene.render.ffmpeg.constant_rate_factor = "HIGH"
+    scene.render.ffmpeg.audio_codec = "NONE"
+    scene.render.filepath = OUT_MP4
+except (TypeError, AttributeError):
+    video_direct = False
+    os.makedirs(OUT_DIR, exist_ok=True)
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.filepath = os.path.join(OUT_DIR, "frame_")
+
+# мир (фон)
+world = bpy.data.worlds.new("World")
+scene.world = world
+world.use_nodes = True
+bg = world.node_tree.nodes.get("Background")
+if bg:
+    bg.inputs[0].default_value = (0.93, 0.95, 0.98, 1.0)
+    bg.inputs[1].default_value = 1.0
+
+# ----------------------------------------------------------- материалы
+def mat(name, rgba, rough=0.5, metal=0.0, emit=0.0):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    b = m.node_tree.nodes.get("Principled BSDF")
+    b.inputs["Base Color"].default_value = rgba
+    b.inputs["Roughness"].default_value = rough
+    b.inputs["Metallic"].default_value = metal
+    if emit:
+        try:
+            b.inputs["Emission Color"].default_value = rgba
+            b.inputs["Emission Strength"].default_value = emit
+        except KeyError:
+            pass
+    return m
+
+M_SLAB = mat("slab", (0.62, 0.70, 0.80, 1), rough=0.7)
+M_PORT = mat("port", (0.10, 0.16, 0.28, 1), rough=0.6)
+M_ROBOT = mat("robot", (1.00, 0.72, 0.02, 1), rough=0.35, metal=0.2, emit=0.25)
+M_IND = mat("induct", (0.42, 0.72, 0.35, 1), rough=0.5)
+M_CHUTE = mat("chute", (0.88, 0.48, 0.16, 1), rough=0.4, metal=0.4)
+M_BOX = mat("box", (0.79, 0.64, 0.42, 1), rough=0.8)
+M_FLOOR = mat("floor", (0.85, 0.87, 0.90, 1), rough=0.9)
+M_COL = mat("col", (0.45, 0.48, 0.53, 1), rough=0.6, metal=0.5)
+
+coll = scene.collection
+
+def add_cube(name, size, loc, material):
+    """Куб-примитив: size=(x,y,z), loc — центр."""
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc)
+    o = bpy.context.active_object
+    o.name = name
+    o.scale = (size[0] / 2, size[1] / 2, size[2] / 2)
+    o.data.materials.append(material)
+    return o
+
+def clone(src, name, loc):
+    """Дешёвая копия: общий меш, свой объект."""
+    o = bpy.data.objects.new(name, src.data)
+    o.location = loc
+    o.scale = src.scale
+    coll.objects.link(o)
+    return o
+
+# ----------------------------------------------------------- статика
+add_cube("floor", (FIELD_W + 8, FIELD_H + 8, 0.2),
+         (FIELD_W / 2, FIELD_H / 2, -0.1), M_FLOOR)
+
+for z in TIERS_Z:                              # плиты ярусов
+    add_cube(f"slab_{z}", (FIELD_W, FIELD_H, SLAB_T),
+             (FIELD_W / 2, FIELD_H / 2, z - SLAB_T / 2), M_SLAB)
+
+for i in range(0, 6):                          # колонны каркаса
+    for j in range(0, 5):
+        add_cube(f"col_{i}_{j}", (0.4, 0.4, TIERS_Z[-1]),
+                 (i * 12.0, j * 11.5, TIERS_Z[-1] / 2), M_COL)
+
+ports_xy = [(MARGIN + c * PITCH_X, MARGIN + r * PITCH_Y)
+            for c in range(PORT_COLS) for r in range(PORT_ROWS)]
+
+port_proto = add_cube("port_proto", (0.8, 0.6, 0.06),
+                      (ports_xy[0][0], ports_xy[0][1], TIERS_Z[0] + 0.03),
+                      M_PORT)
+for z in TIERS_Z:                              # тёмные плашки портов
+    for k, (x, y) in enumerate(ports_xy):
+        if z == TIERS_Z[0] and k == 0:
+            continue
+        clone(port_proto, f"port_{z}_{k}", (x, y, z + 0.03))
+
+n_side = INDUCTIONS // 4
+ind_xy = []
+for i in range(n_side):
+    t = (i + 0.5) / n_side
+    ind_xy += [(t * FIELD_W, -0.9), (t * FIELD_W, FIELD_H + 0.9),
+               (-0.9, t * FIELD_H), (FIELD_W + 0.9, t * FIELD_H)]
+ind_proto = add_cube("ind_proto", (1.2, 1.2, 0.9),
+                     (ind_xy[0][0], ind_xy[0][1], TIERS_Z[0] + 0.45), M_IND)
+for z in TIERS_Z:                              # индукционные станции
+    for k, (x, y) in enumerate(ind_xy):
+        if z == TIERS_Z[0] and k == 0:
+            continue
+        clone(ind_proto, f"ind_{z}_{k}", (x, y, z + 0.45))
+
+chute_sample = rng.sample(ports_xy, CHUTES_SAMPLE)
+bpy.ops.mesh.primitive_cylinder_add(radius=0.25,
+                                    depth=TIERS_Z[0] - 0.9,
+                                    location=(chute_sample[0][0],
+                                              chute_sample[0][1],
+                                              (TIERS_Z[0] - 0.9) / 2 + 0.9))
+chute_proto = bpy.context.active_object
+chute_proto.data.materials.append(M_CHUTE)
+box_proto = add_cube("box_proto", (0.6, 0.4, 0.4),
+                     (chute_sample[0][0], chute_sample[0][1], 0.6), M_BOX)
+for k, (x, y) in enumerate(chute_sample):      # шахты + короба под ними
+    if k:
+        clone(chute_proto, f"chute_{k}",
+              (x, y, (TIERS_Z[0] - 0.9) / 2 + 0.9))
+        clone(box_proto, f"box_{k}", (x, y, 0.6))
+
+# ----------------------------------------------------------- роботы + анимация
+class Bot:
+    def __init__(self, z):
+        self.z = z
+        self.x, self.y = rng.choice(ind_xy)
+        self.loaded = False
+        self.pause = 0.0
+        self._retarget()
+
+    def _retarget(self):
+        if self.loaded:
+            self.tx, self.ty = min(ind_xy, key=lambda s: abs(s[0] - self.x)
+                                   + abs(s[1] - self.y))
+        else:
+            self.tx, self.ty = rng.choice(ports_xy)
+        self.loaded = not self.loaded
+
+    def step(self, dt):
+        if self.pause > 0:
+            self.pause -= dt
+            return
+        d = ROBOT_SPEED * dt
+        if abs(self.tx - self.x) > 0.05:
+            self.x += max(-d, min(d, self.tx - self.x))
+        elif abs(self.ty - self.y) > 0.05:
+            self.y += max(-d, min(d, self.ty - self.y))
+        else:
+            self.pause = 2.0 if self.loaded else 1.2
+            self._retarget()
+
+
+robot_proto = add_cube("robot_proto", ROBOT_DIMS, (0, 0, -5), M_ROBOT)
+robot_proto.hide_render = True
+bots, objs = [], []
+for z in TIERS_Z:
+    for i in range(ROBOTS_PER_TIER):
+        b = Bot(z)
+        o = clone(robot_proto, f"bot_{z}_{i}",
+                  (b.x, b.y, z + ROBOT_DIMS[2] / 2))
+        o.hide_render = False
+        bots.append(b)
+        objs.append(o)
+
+KEY_EVERY = 4                                   # ключевой кадр раз в 4 кадра
+dt = SPEEDUP / FPS
+for f in range(1, scene.frame_end + 1):
+    for b in bots:
+        b.step(dt)
+    if f % KEY_EVERY == 0 or f == 1:
+        for b, o in zip(bots, objs):
+            o.location = (b.x, b.y, b.z + ROBOT_DIMS[2] / 2)
+            o.keyframe_insert("location", frame=f)
+
+try:                                            # запасной путь для Blender 4.x
+    for o in objs:
+        if o.animation_data and o.animation_data.action:
+            for fc in o.animation_data.action.fcurves:
+                for kp in fc.keyframe_points:
+                    kp.interpolation = "LINEAR"
+except Exception:
+    pass  # в Blender 5 интерполяция уже задана настройкой выше
+
+# ----------------------------------------------------------- свет и камера
+bpy.ops.object.light_add(type="SUN", location=(30, -40, 60))
+sun = bpy.context.active_object
+sun.data.energy = 3.0
+sun.rotation_euler = (math.radians(50), 0, math.radians(20))
+bpy.ops.object.light_add(type="AREA",
+                         location=(FIELD_W / 2, FIELD_H / 2, 30))
+area = bpy.context.active_object
+area.data.energy = 6000
+area.data.size = 60
+
+target = bpy.data.objects.new("target", None)   # центр интереса
+target.location = (FIELD_W / 2, FIELD_H / 2, 5.5)
+coll.objects.link(target)
+rig = bpy.data.objects.new("cam_rig", None)      # вращающийся штатив
+rig.location = target.location
+coll.objects.link(rig)
+
+bpy.ops.object.camera_add(location=(FIELD_W / 2 + 78, FIELD_H / 2 - 62, 42))
+cam = bpy.context.active_object
+cam.data.lens = 40
+tr = cam.constraints.new("TRACK_TO")
+tr.target = target
+cam.parent = rig
+cam.matrix_parent_inverse = rig.matrix_world.inverted()
+scene.camera = cam
+
+rig.rotation_euler = (0, 0, 0)                   # облёт на 70°
+rig.keyframe_insert("rotation_euler", frame=1)
+rig.rotation_euler = (0, 0, math.radians(70))
+rig.keyframe_insert("rotation_euler", frame=scene.frame_end)
+try:                                            # запасной путь для Blender 4.x
+    for fc in rig.animation_data.action.fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+except Exception:
+    pass
+
+# ----------------------------------------------------------- рендер
+def encode_frames():
+    """Склейка PNG-кадров в MP4: сначала NVENC (кодировщик на видеокарте
+    NVIDIA), если его нет — libx264 (кодировщик на процессоре)."""
+    pattern = os.path.join(OUT_DIR, "frame_%04d.png")
+    for codec_args in (["-c:v", "h264_nvenc", "-preset", "p5", "-b:v", "8M"],
+                       ["-c:v", "libx264", "-crf", "18"]):
+        cmd = (["ffmpeg", "-y", "-framerate", str(FPS), "-i", pattern]
+               + codec_args + ["-pix_fmt", "yuv420p", OUT_MP4])
+        try:
+            if subprocess.call(cmd) == 0:
+                print("[blender_anim] видео готово:", OUT_MP4)
+                return True
+        except FileNotFoundError:
+            break
+    print("[blender_anim] ffmpeg не сработал — кадры лежат в", OUT_DIR)
+    print("Склей вручную:  ffmpeg -framerate", FPS, "-i",
+          pattern, "-c:v h264_nvenc -pix_fmt yuv420p", OUT_MP4)
+    return False
+
+
+if bpy.app.background:                           # запущено с «-b» — рендерим
+    print(f"[blender_anim] движок: {scene.render.engine}, "
+          f"кадров: {scene.frame_end}, "
+          f"режим: {'MP4 напрямую' if video_direct else 'PNG-кадры + ffmpeg'}")
+    bpy.ops.render.render(animation=True)
+    if video_direct:
+        print("[blender_anim] готово:", OUT_MP4)
+    else:
+        encode_frames()
+else:
+    print("[blender_anim] сцена построена. Рендер анимации: Ctrl+F12")
+    if not video_direct:
+        print("[blender_anim] после рендера склей кадры:  "
+              f"ffmpeg -framerate {FPS} -i "
+              f"{os.path.join(OUT_DIR, 'frame_%04d.png')} "
+              f"-c:v h264_nvenc -pix_fmt yuv420p {OUT_MP4}")
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/app.py
+================================================================
+# -*- coding: utf-8 -*-
+"""
+app.py — интерактивный дашборд результатов (Streamlit).
+
+Запуск:  streamlit run app.py     (сначала: python sim/run_all.py)
+Docker:  docker compose up dashboard  ->  http://localhost:8501
+"""
+
+import json
+import os
+
+import pandas as pd
+import streamlit as st
+
+RES = "results"
+
+st.set_page_config(page_title="АСР-100/400 «Рой»", layout="wide")
+st.title("АСР-100/400 «Рой» — результаты верификации")
+st.caption("Ozon Tech «Робозон», задача 2 · команда «Ящик Шрёдингера»")
+
+path = os.path.join(RES, "summary_all.json")
+if not os.path.exists(path):
+    st.warning("Нет результатов. Выполните:  `python sim/run_all.py`")
+    st.stop()
+
+with open(path, encoding="utf-8") as f:
+    allsum = json.load(f)
+
+scen = st.sidebar.selectbox("Сценарий", list(allsum.keys()))
+s = allsum[scen]
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Производительность, шт/ч", f"{s['throughput_steady_h']:,.0f}"
+          .replace(",", " "))
+c2.metric("Задержка p95, с", s["latency_p95_s"])
+c3.metric("Точность сортировки, %", s["sort_accuracy_pct"])
+c4.metric("Вт·ч на товар", s["energy_wh_per_item"])
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Утилизация роботов", s["robot_util"])
+c6.metric("Заполнение КТЯ", s["box_fill_avg"])
+c7.metric("Коробов закрыто", f"{s['boxes_done']:,}".replace(",", " "))
+c8.metric("Резервных портов задействовано", s["reserve_assigned"])
+
+ts_path = os.path.join(RES, scen, "timeseries.csv")
+if os.path.exists(ts_path):
+    ts = pd.read_csv(ts_path)
+    ts["t_ч"] = ts["t"] / 3600
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Производительность, шт/ч")
+        st.line_chart(ts.set_index("t_ч")["thr_h"])
+        st.subheader("Роботы: занято / едут")
+        st.line_chart(ts.set_index("t_ч")[["robots_busy", "moving"]])
+    with right:
+        st.subheader("Очередь перед индукцией, шт")
+        st.line_chart(ts.set_index("t_ч")["q_induct"])
+        st.subheader("Товаров внутри системы")
+        st.line_chart(ts.set_index("t_ч")["in_system"])
+
+lat_path = os.path.join(RES, scen, "latency_s.csv")
+if os.path.exists(lat_path):
+    lat = pd.read_csv(lat_path)["latency_s"]
+    st.subheader("Гистограмма времени «приёмка → короб», с")
+    st.bar_chart(pd.cut(lat, bins=40).value_counts().sort_index()
+                 .rename(index=lambda i: round(i.mid)))
+
+with st.expander("Полный summary.json"):
+    st.json(s)
+
+val = os.path.join(RES, "validation.md")
+if os.path.exists(val):
+    st.divider()
+    st.markdown(open(val, encoding="utf-8").read())
+
+
+
+================================================================
+ФАЙЛ: ./files/robozon-track2/requirements.txt
+================================================================
+# Проверено на Python 3.12
+simpy==4.1.2
+numpy==2.2.6
+matplotlib==3.10.6
+pandas==2.3.3
+streamlit==1.45.0
+
+
+
